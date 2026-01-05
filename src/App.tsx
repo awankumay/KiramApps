@@ -1,6 +1,6 @@
-import { useAuth } from "./contexts/AuthContext";
-import LoginScreen from "./pages/LoginScreen";
-import { MainApp } from "./pages/MainApp";
+import { useAuth } from "@Features/Auth/Contexts/AuthContext";
+import AuthPage from "@Features/Auth/AuthPage";
+import { DashboardPage } from "@Features/Dashboard/DashboardPage";
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -16,7 +16,7 @@ function App() {
     );
   }
 
-  return isAuthenticated ? <MainApp /> : <LoginScreen />;
+  return isAuthenticated ? <DashboardPage /> : <AuthPage />;
 }
 
 export default App;

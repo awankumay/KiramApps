@@ -9,6 +9,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@Features": path.resolve(__dirname, "./src/Features"),
+      "@Shared": path.resolve(__dirname, "./src/Shared"),
+      "@App": path.resolve(__dirname, "./src/App"),
     },
   },
   plugins: [

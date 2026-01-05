@@ -35,15 +35,34 @@
 - **Naming Conventions:**
   - React Components: PascalCase (e.g., `SuratMasukForm.tsx`)
   - Functions/Variables: camelCase (e.g., `handleSubmit`, `truckData`)
-  - Files: kebab-case for utilities, PascalCase for components
+  - Files: PascalCase for all files (consistent naming convention)
   - Database tables: snake_case (e.g., `surat_masuk`)
-- **File Organization:**
+- **File Organization (Feature-First Architecture):**
   - `/electron` - Main and preload process code
   - `/src` - React application code
-  - `/src/components` - React components (shadcn-ui components)
-  - `/src/lib` - Utility functions and helpers
-  - `/public` - Static assets
+  - `/src/App` - Application root and configuration
+  - `/src/Features` - Feature-based modules (Auth, Dashboard, etc.)
+    - `/src/Features/Auth` - Authentication feature
+      - `/Components` - Auth-specific components (LoginForm, etc.)
+      - `/Hooks` - Auth-specific custom hooks
+      - `/Contexts` - Auth context providers
+    - `/src/Features/Dashboard` - Dashboard feature
+      - `/Components` - Dashboard-specific components
+      - `/Hooks` - Dashboard-specific custom hooks
+  - `/src/Shared` - Shared code across features
+    - `/Components` - Shared non-UI components
+    - `/Components/UI` - shadcn-ui components (Button, Card, etc.)
+    - `/Hooks` - Shared custom hooks (UseMobile, etc.)
+    - `/Lib` - Utility functions and helpers (Utils.ts)
+    - `/Types` - Shared TypeScript type definitions
+  - `/src/Assets` - Static assets (images, fonts, etc.)
+  - `/public` - Public static files
   - `/dist-electron` - Built electron files
+- **Path Aliases:**
+  - `@Features/*` - Import from Features directory
+  - `@Shared/*` - Import from Shared directory
+  - `@App/*` - Import from App directory
+  - `@/*` - Import from src root
 
 ### UI/Design Conventions
 

@@ -1,4 +1,55 @@
-# React + TypeScript + Vite
+# Kiram Site - Aplikasi Surat Masuk Digital
+
+Offline-first desktop application for tracking incoming units (trucks) at field locations with unstable internet connectivity.
+
+## Tech Stack
+
+- **Runtime:** Electron.js v30+
+- **UI Framework:** React 18.2+ with TypeScript
+- **Build Tool:** Vite 5+
+- **Language:** TypeScript 5.2+
+- **Styling:** Tailwind CSS 4+ with shadcn-ui component library
+- **Component Library:** shadcn-ui
+
+## Project Structure
+
+This project uses a **feature-first architecture** with PascalCase naming convention:
+
+```
+src/
+├── App/                    # Application root and configuration
+├── Features/               # Feature-based modules
+│   ├── Auth/              # Authentication feature
+│   │   ├── Components/    # Auth-specific components
+│   │   ├── Hooks/         # Auth-specific custom hooks
+│   │   └── Contexts/      # Auth context providers
+│   └── Dashboard/         # Dashboard feature
+│       ├── Components/    # Dashboard-specific components
+│       └── Hooks/         # Dashboard-specific custom hooks
+├── Shared/                # Shared code across features
+│   ├── Components/        # Shared non-UI components
+│   ├── Components/UI/     # shadcn-ui components (Button, Card, etc.)
+│   ├── Hooks/            # Shared custom hooks
+│   ├── Lib/              # Utility functions and helpers
+│   └── Types/            # Shared TypeScript type definitions
+└── Assets/               # Static assets (images, fonts, etc.)
+```
+
+### Path Aliases
+
+- `@Features/*` - Import from Features directory
+- `@Shared/*` - Import from Shared directory
+- `@App/*` - Import from App directory
+- `@/*` - Import from src root
+
+### Naming Conventions
+
+- **React Components:** PascalCase (e.g., `SuratMasukForm.tsx`)
+- **Functions/Variables:** camelCase (e.g., `handleSubmit`, `truckData`)
+- **Files:** PascalCase for all files (consistent naming convention)
+- **Database tables:** snake_case (e.g., `surat_masuk`)
+
+## Development
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
@@ -17,12 +68,12 @@ If you are developing a production application, we recommend updating the config
 export default {
   // other rules...
   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
+    ecmaVersion: "latest",
+    sourceType: "module",
+    project: ["./tsconfig.json", "./tsconfig.node.json"],
     tsconfigRootDir: __dirname,
   },
-}
+};
 ```
 
 - Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
