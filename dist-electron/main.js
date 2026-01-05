@@ -8,8 +8,9 @@ import path from "path";
 import { createRequire } from "module";
 import fs from "fs";
 import { EventEmitter } from "events";
-const require$4 = createRequire(import.meta.url);
-const BetterSqlite3 = require$4("better-sqlite3");
+import { createHash } from "crypto";
+const require$5 = createRequire(import.meta.url);
+const BetterSqlite3 = require$5("better-sqlite3");
 function initAuthDatabase(db) {
   try {
     const tableInfo = db.pragma("table_info(auth_sessions)");
@@ -61,6 +62,276 @@ function initAuthDatabase(db) {
     CREATE INDEX IF NOT EXISTS idx_auth_events_created_at 
     ON auth_events(created_at);
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+    const hasPasswordHash = tableInfo.some(
+      (col) => col.name === "password_hash"
+    );
+    if (!hasPasswordHash) {
+      db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT;`);
+      console.log("Migration: Added password_hash column to users table");
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_username 
+    ON users(username);
+    
+    CREATE INDEX IF NOT EXISTS idx_users_email 
+    ON users(email);
+    
+    CREATE INDEX IF NOT EXISTS idx_users_status 
+    ON users(status);
+  `);
+  initRBACDatabase(db);
+}
+function initRBACDatabase(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS permissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER NOT NULL,
+      permission_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (role_id, permission_id),
+      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+      FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id INTEGER NOT NULL,
+      role_id INTEGER NOT NULL,
+      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, role_id),
+      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id 
+    ON role_permissions(role_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id 
+    ON role_permissions(permission_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_user_roles_user_id 
+    ON user_roles(user_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_user_roles_role_id 
+    ON user_roles(role_id);
+  `);
+  seedRBACData(db);
+}
+function seedRBACData(db) {
+  const roles = [
+    {
+      code: "SUPERADMIN",
+      name: "Super Administrator",
+      description: "Full system access"
+    },
+    {
+      code: "CHECKER",
+      name: "Checker",
+      description: "Transaction input and verification"
+    },
+    {
+      code: "LOADER",
+      name: "Operator Loader",
+      description: "Loader operation only"
+    }
+  ];
+  const permissions = [
+    {
+      code: "VIEW_DASHBOARD",
+      name: "View Dashboard",
+      description: "Access dashboard"
+    },
+    {
+      code: "CREATE_TRANSACTION",
+      name: "Create Transaction",
+      description: "Create new transactions"
+    },
+    {
+      code: "VIEW_TRANSACTION",
+      name: "View Transaction",
+      description: "View transaction details"
+    },
+    {
+      code: "VERIFY_PAYMENT",
+      name: "Verify Payment",
+      description: "Verify payment submissions"
+    },
+    {
+      code: "VIEW_LOADER_QUEUE",
+      name: "View Loader Queue",
+      description: "View loader assignment queue"
+    },
+    {
+      code: "UPDATE_LOADER_STATUS",
+      name: "Update Loader Status",
+      description: "Update loader assignment status"
+    },
+    {
+      code: "MANAGE_USERS",
+      name: "Manage Users",
+      description: "Create, edit, delete users"
+    },
+    {
+      code: "MANAGE_ROLES",
+      name: "Manage Roles",
+      description: "Manage roles and permissions"
+    },
+    {
+      code: "VIEW_REPORTS",
+      name: "View Reports",
+      description: "Access system reports"
+    }
+  ];
+  const rolePermissions = {
+    SUPERADMIN: permissions.map((p) => p.code),
+    // All permissions
+    CHECKER: [
+      "VIEW_DASHBOARD",
+      "CREATE_TRANSACTION",
+      "VIEW_TRANSACTION",
+      "VERIFY_PAYMENT"
+    ],
+    LOADER: ["VIEW_DASHBOARD", "VIEW_LOADER_QUEUE", "UPDATE_LOADER_STATUS"]
+  };
+  const userRoles = [
+    { userId: 1, roleCode: "SUPERADMIN" },
+    // emilys
+    { userId: 2, roleCode: "CHECKER" },
+    // michaelw
+    { userId: 3, roleCode: "LOADER" }
+    // sophiab
+  ];
+  const insertRole = db.prepare(`
+    INSERT OR IGNORE INTO roles (code, name, description) VALUES (?, ?, ?)
+  `);
+  for (const role of roles) {
+    insertRole.run(role.code, role.name, role.description);
+  }
+  const insertPermission = db.prepare(`
+    INSERT OR IGNORE INTO permissions (code, name, description) VALUES (?, ?, ?)
+  `);
+  for (const permission of permissions) {
+    insertPermission.run(
+      permission.code,
+      permission.name,
+      permission.description
+    );
+  }
+  const getRoleId = db.prepare(`SELECT id FROM roles WHERE code = ?`);
+  const getPermissionId = db.prepare(
+    `SELECT id FROM permissions WHERE code = ?`
+  );
+  const insertRolePermission = db.prepare(`
+    INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)
+  `);
+  for (const [roleCode, permissionCodes] of Object.entries(rolePermissions)) {
+    const roleRow = getRoleId.get(roleCode);
+    if (!roleRow) continue;
+    for (const permCode of permissionCodes) {
+      const permRow = getPermissionId.get(permCode);
+      if (!permRow) continue;
+      insertRolePermission.run(roleRow.id, permRow.id);
+    }
+  }
+  const insertUserRole = db.prepare(`
+    INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)
+  `);
+  for (const { userId, roleCode } of userRoles) {
+    const roleRow = getRoleId.get(roleCode);
+    if (!roleRow) continue;
+    insertUserRole.run(userId, roleRow.id);
+  }
+  const testUsers = [
+    {
+      id: 1,
+      username: "emilys",
+      email: "emily.johnson@x.dummyjson.com",
+      firstName: "Emily",
+      lastName: "Johnson",
+      status: "active"
+    },
+    {
+      id: 2,
+      username: "michaelw",
+      email: "michael.williams@x.dummyjson.com",
+      firstName: "Michael",
+      lastName: "Williams",
+      status: "active"
+    },
+    {
+      id: 3,
+      username: "sophiab",
+      email: "sophia.brown@x.dummyjson.com",
+      firstName: "Sophia",
+      lastName: "Brown",
+      status: "active"
+    },
+    {
+      id: 4,
+      username: "jamesd",
+      email: "james.davis@x.dummyjson.com",
+      firstName: "James",
+      lastName: "Davis",
+      status: "inactive"
+    },
+    {
+      id: 5,
+      username: "emmaw",
+      email: "emma.wilson@x.dummyjson.com",
+      firstName: "Emma",
+      lastName: "Wilson",
+      status: "active"
+    }
+  ];
+  const insertUser = db.prepare(`
+    INSERT OR IGNORE INTO users (id, username, email, first_name, last_name, status) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  for (const user of testUsers) {
+    insertUser.run(
+      user.id,
+      user.username,
+      user.email,
+      user.firstName,
+      user.lastName,
+      user.status
+    );
+  }
+  console.log("RBAC data seeded successfully");
 }
 function getDatabasePath() {
   const userDataPath = app.getPath("userData");
@@ -83,8 +354,8 @@ function createDatabase() {
   console.log("Database initialized successfully");
   return db;
 }
-const require$3 = createRequire(import.meta.url);
-require$3("better-sqlite3");
+const require$4 = createRequire(import.meta.url);
+require$4("better-sqlite3");
 class TokenStorage {
   constructor(db) {
     __publicField(this, "db");
@@ -241,8 +512,8 @@ class TokenStorage {
     return new Date(tokenExpiry) <= /* @__PURE__ */ new Date();
   }
 }
-const require$2 = createRequire(import.meta.url);
-require$2("better-sqlite3");
+const require$3 = createRequire(import.meta.url);
+require$3("better-sqlite3");
 class AuditLogger {
   constructor(db) {
     __publicField(this, "db");
@@ -579,6 +850,345 @@ class NetworkStatus extends EventEmitter {
     }
   }
 }
+const require$2 = createRequire(import.meta.url);
+require$2("better-sqlite3");
+function hashPassword(password) {
+  return createHash("sha256").update(password).digest("hex");
+}
+class RBACManager {
+  // 5 minutes
+  constructor(db) {
+    __publicField(this, "db");
+    __publicField(this, "cache", /* @__PURE__ */ new Map());
+    __publicField(this, "cacheTTL", 5 * 60 * 1e3);
+    this.db = db;
+  }
+  /**
+   * Get all roles assigned to a user
+   */
+  getUserRoles(userId) {
+    const cached = this.getCachedData(userId);
+    if (cached) {
+      return cached.roles;
+    }
+    const stmt = this.db.prepare(`
+      SELECT r.code
+      FROM roles r
+      JOIN user_roles ur ON r.id = ur.role_id
+      WHERE ur.user_id = ?
+    `);
+    const rows = stmt.all(userId);
+    const roles = rows.map((row) => row.code);
+    this.updateCache(userId, roles);
+    return roles;
+  }
+  /**
+   * Get all permissions for a user (aggregated from all roles)
+   */
+  getUserPermissions(userId) {
+    const cached = this.getCachedData(userId);
+    if (cached) {
+      return cached.permissions;
+    }
+    const stmt = this.db.prepare(`
+      SELECT DISTINCT p.code
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+    `);
+    const rows = stmt.all(userId);
+    const permissions = rows.map((row) => row.code);
+    this.updateCache(userId);
+    return permissions;
+  }
+  /**
+   * Check if a user has a specific permission
+   */
+  checkPermission(userId, permissionCode) {
+    const permissions = this.getUserPermissions(userId);
+    return permissions.includes(permissionCode);
+  }
+  /**
+   * Check if a user has any of the specified permissions
+   */
+  hasAnyPermission(userId, permissionCodes) {
+    const permissions = this.getUserPermissions(userId);
+    return permissionCodes.some((code) => permissions.includes(code));
+  }
+  /**
+   * Check if a user has all of the specified permissions
+   */
+  hasAllPermissions(userId, permissionCodes) {
+    const permissions = this.getUserPermissions(userId);
+    return permissionCodes.every((code) => permissions.includes(code));
+  }
+  /**
+   * Get all available roles
+   */
+  getAllRoles() {
+    const stmt = this.db.prepare(`
+      SELECT id, code, name, description FROM roles ORDER BY id
+    `);
+    return stmt.all();
+  }
+  /**
+   * Get all available permissions
+   */
+  getAllPermissions() {
+    const stmt = this.db.prepare(`
+      SELECT id, code, name, description FROM permissions ORDER BY id
+    `);
+    return stmt.all();
+  }
+  /**
+   * Get permissions for a specific role
+   */
+  getRolePermissions(roleCode) {
+    const stmt = this.db.prepare(`
+      SELECT p.code
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN roles r ON rp.role_id = r.id
+      WHERE r.code = ?
+    `);
+    const rows = stmt.all(roleCode);
+    return rows.map((row) => row.code);
+  }
+  /**
+   * Assign a role to a user
+   */
+  assignRole(userId, roleCode) {
+    try {
+      const getRoleId = this.db.prepare(`SELECT id FROM roles WHERE code = ?`);
+      const roleRow = getRoleId.get(roleCode);
+      if (!roleRow) {
+        console.error(`Role not found: ${roleCode}`);
+        return false;
+      }
+      const insertStmt = this.db.prepare(`
+        INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)
+      `);
+      insertStmt.run(userId, roleRow.id);
+      this.invalidateCache(userId);
+      return true;
+    } catch (error) {
+      console.error("Failed to assign role:", error);
+      return false;
+    }
+  }
+  /**
+   * Remove a role from a user
+   */
+  removeRole(userId, roleCode) {
+    try {
+      const getRoleId = this.db.prepare(`SELECT id FROM roles WHERE code = ?`);
+      const roleRow = getRoleId.get(roleCode);
+      if (!roleRow) {
+        return false;
+      }
+      const deleteStmt = this.db.prepare(`
+        DELETE FROM user_roles WHERE user_id = ? AND role_id = ?
+      `);
+      deleteStmt.run(userId, roleRow.id);
+      this.invalidateCache(userId);
+      return true;
+    } catch (error) {
+      console.error("Failed to remove role:", error);
+      return false;
+    }
+  }
+  // ============================================
+  // User Management CRUD Operations
+  // ============================================
+  /**
+   * Get all users with their roles
+   */
+  getAllUsers() {
+    const stmt = this.db.prepare(`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.first_name as firstName,
+        u.last_name as lastName,
+        u.status,
+        u.created_at as createdAt
+      FROM users u
+      ORDER BY u.id
+    `);
+    const users = stmt.all();
+    return users.map((user) => ({
+      ...user,
+      roles: this.getUserRoles(user.id)
+    }));
+  }
+  /**
+   * Get a single user by ID
+   */
+  getUserById(userId) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.first_name as firstName,
+        u.last_name as lastName,
+        u.status,
+        u.created_at as createdAt
+      FROM users u
+      WHERE u.id = ?
+    `);
+    const user = stmt.get(userId);
+    if (!user) return null;
+    return {
+      ...user,
+      roles: this.getUserRoles(userId)
+    };
+  }
+  /**
+   * Create a new user
+   */
+  createUser(data) {
+    const passwordHash = hashPassword(data.password);
+    const insertStmt = this.db.prepare(`
+      INSERT INTO users (username, email, password_hash, first_name, last_name, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    const result = insertStmt.run(
+      data.username,
+      data.email,
+      passwordHash,
+      data.firstName,
+      data.lastName,
+      data.status || "active"
+    );
+    const userId = result.lastInsertRowid;
+    if (data.roles && data.roles.length > 0) {
+      for (const roleCode of data.roles) {
+        this.assignRole(userId, roleCode);
+      }
+    }
+    return this.getUserById(userId);
+  }
+  /**
+   * Update an existing user
+   */
+  updateUser(userId, data) {
+    const user = this.getUserById(userId);
+    if (!user) return null;
+    const updateStmt = this.db.prepare(`
+      UPDATE users
+      SET username = ?,
+          email = ?,
+          first_name = ?,
+          last_name = ?,
+          status = ?
+      WHERE id = ?
+    `);
+    updateStmt.run(
+      data.username ?? user.username,
+      data.email ?? user.email,
+      data.firstName ?? user.firstName,
+      data.lastName ?? user.lastName,
+      data.status ?? user.status,
+      userId
+    );
+    if (data.roles !== void 0) {
+      const deleteRolesStmt = this.db.prepare(
+        `DELETE FROM user_roles WHERE user_id = ?`
+      );
+      deleteRolesStmt.run(userId);
+      for (const roleCode of data.roles) {
+        this.assignRole(userId, roleCode);
+      }
+    }
+    this.invalidateCache(userId);
+    return this.getUserById(userId);
+  }
+  /**
+   * Delete a user
+   */
+  deleteUser(userId) {
+    try {
+      const deleteRolesStmt = this.db.prepare(
+        `DELETE FROM user_roles WHERE user_id = ?`
+      );
+      deleteRolesStmt.run(userId);
+      const deleteUserStmt = this.db.prepare(`DELETE FROM users WHERE id = ?`);
+      const result = deleteUserStmt.run(userId);
+      this.invalidateCache(userId);
+      return result.changes > 0;
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      return false;
+    }
+  }
+  /**
+   * Toggle user status (active/inactive)
+   */
+  toggleUserStatus(userId) {
+    const user = this.getUserById(userId);
+    if (!user) return null;
+    const newStatus = user.status === "active" ? "inactive" : "active";
+    const stmt = this.db.prepare(`UPDATE users SET status = ? WHERE id = ?`);
+    stmt.run(newStatus, userId);
+    return this.getUserById(userId);
+  }
+  /**
+   * Invalidate cache for a specific user
+   */
+  invalidateCache(userId) {
+    this.cache.delete(userId);
+  }
+  /**
+   * Clear entire cache
+   */
+  clearCache() {
+    this.cache.clear();
+  }
+  /**
+   * Get cached data for a user if still valid
+   */
+  getCachedData(userId) {
+    const cached = this.cache.get(userId);
+    if (!cached) return null;
+    if (Date.now() - cached.cachedAt > this.cacheTTL) {
+      this.cache.delete(userId);
+      return null;
+    }
+    return cached;
+  }
+  /**
+   * Update cache for a user
+   */
+  updateCache(userId, roles) {
+    if (!roles) {
+      const roleStmt = this.db.prepare(`
+        SELECT r.code
+        FROM roles r
+        JOIN user_roles ur ON r.id = ur.role_id
+        WHERE ur.user_id = ?
+      `);
+      const roleRows = roleStmt.all(userId);
+      roles = roleRows.map((row) => row.code);
+    }
+    const permStmt = this.db.prepare(`
+      SELECT DISTINCT p.code
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_roles ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+    `);
+    const permRows = permStmt.all(userId);
+    const permissions = permRows.map((row) => row.code);
+    this.cache.set(userId, {
+      roles,
+      permissions,
+      cachedAt: Date.now()
+    });
+  }
+}
 const require$1 = createRequire(import.meta.url);
 require$1("better-sqlite3");
 class AuthManager {
@@ -587,54 +1197,136 @@ class AuthManager {
     __publicField(this, "auditLogger");
     __publicField(this, "apiClient");
     __publicField(this, "networkStatus");
+    __publicField(this, "rbacManager");
+    __publicField(this, "db");
+    this.db = db;
     this.tokenStorage = new TokenStorage(db);
     this.auditLogger = new AuditLogger(db);
     this.apiClient = new DummyJSONClient();
     this.networkStatus = new NetworkStatus();
+    this.rbacManager = new RBACManager(db);
+  }
+  /**
+   * Get RBAC manager for permission checks
+   */
+  getRBACManager() {
+    return this.rbacManager;
   }
   /**
    * Login with username and password
-   * Requires internet connection
+   * Tries DummyJSON API first, falls back to local SQLite authentication
    */
   async login(username, password) {
     try {
       const isOnline = await this.networkStatus.isOnline();
-      if (!isOnline) {
+      if (isOnline) {
+        try {
+          const response = await this.apiClient.login(username, password);
+          await this.tokenStorage.storeSession({
+            userId: response.id,
+            username: response.username,
+            email: response.email,
+            firstName: response.firstName,
+            lastName: response.lastName,
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresIn: 3600
+            // 60 minutes in seconds
+          });
+          await this.auditLogger.logLogin({
+            userId: response.id,
+            username: response.username,
+            success: true
+          });
+          const session = await this.tokenStorage.getActiveSession();
+          if (!session) {
+            throw new Error("Session not found after login");
+          }
+          const roles = this.rbacManager.getUserRoles(response.id);
+          const permissions = this.rbacManager.getUserPermissions(response.id);
+          return {
+            user: {
+              id: response.id,
+              username: response.username,
+              email: response.email,
+              firstName: response.firstName,
+              lastName: response.lastName,
+              roles,
+              permissions
+            },
+            expiresAt: session.tokenExpiry
+          };
+        } catch (apiError) {
+          console.log("API login failed, trying local authentication");
+          return this.loginLocal(username, password);
+        }
+      } else {
+        console.log("Offline, trying local authentication");
+        return this.loginLocal(username, password);
+      }
+    } catch (error) {
+      await this.auditLogger.logLogin({
+        username,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : "Unknown error"
+      });
+      throw error;
+    }
+  }
+  /**
+   * Login with local SQLite database
+   * Used as fallback when DummyJSON API is unavailable
+   */
+  async loginLocal(username, password) {
+    try {
+      const passwordHash = createHash("sha256").update(password).digest("hex");
+      const stmt = this.db.prepare(`
+        SELECT id, username, email, first_name as firstName, last_name as lastName, status
+        FROM users
+        WHERE username = ? AND password_hash = ? AND status = 'active'
+      `);
+      const user = stmt.get(username, passwordHash);
+      if (!user) {
         await this.auditLogger.logLogin({
           username,
           success: false,
-          errorMessage: "No internet connection"
+          errorMessage: "Invalid username or password"
         });
-        throw new NetworkError("Cannot login: No internet connection");
+        throw new Error("Invalid username or password");
       }
-      const response = await this.apiClient.login(username, password);
+      const dummyAccessToken = `local_token_${user.id}_${Date.now()}`;
+      const dummyRefreshToken = `local_refresh_${user.id}_${Date.now()}`;
       await this.tokenStorage.storeSession({
-        userId: response.id,
-        username: response.username,
-        email: response.email,
-        firstName: response.firstName,
-        lastName: response.lastName,
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-        expiresIn: 3600
-        // 60 minutes in seconds
+        userId: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        accessToken: dummyAccessToken,
+        refreshToken: dummyRefreshToken,
+        expiresIn: 3600 * 24
+        // 24 hours for local auth
       });
       await this.auditLogger.logLogin({
-        userId: response.id,
-        username: response.username,
+        userId: user.id,
+        username: user.username,
         success: true
       });
       const session = await this.tokenStorage.getActiveSession();
       if (!session) {
-        throw new Error("Session not found after login");
+        throw new Error("Session not found after local login");
       }
+      const roles = this.rbacManager.getUserRoles(user.id);
+      const permissions = this.rbacManager.getUserPermissions(user.id);
       return {
         user: {
-          id: response.id,
-          username: response.username,
-          email: response.email,
-          firstName: response.firstName,
-          lastName: response.lastName
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          roles,
+          permissions
         },
         expiresAt: session.tokenExpiry
       };
@@ -667,7 +1359,7 @@ class AuthManager {
     }
   }
   /**
-   * Get current authenticated user
+   * Get current authenticated user with roles
    * Works offline if session exists
    */
   async getCurrentUser() {
@@ -685,12 +1377,20 @@ class AuthManager {
             if (!refreshedSession) {
               return null;
             }
+            const roles2 = this.rbacManager.getUserRoles(
+              refreshedSession.userId
+            );
+            const permissions2 = this.rbacManager.getUserPermissions(
+              refreshedSession.userId
+            );
             return {
               id: refreshedSession.userId,
               username: refreshedSession.username,
               email: refreshedSession.email || "",
               firstName: refreshedSession.firstName || "",
-              lastName: refreshedSession.lastName || ""
+              lastName: refreshedSession.lastName || "",
+              roles: roles2,
+              permissions: permissions2
             };
           } catch (error) {
             await this.tokenStorage.clearSession(session.userId);
@@ -708,12 +1408,16 @@ class AuthManager {
           console.log("Token expired but within offline grace period");
         }
       }
+      const roles = this.rbacManager.getUserRoles(session.userId);
+      const permissions = this.rbacManager.getUserPermissions(session.userId);
       return {
         id: session.userId,
         username: session.username,
         email: session.email || "",
         firstName: session.firstName || "",
-        lastName: session.lastName || ""
+        lastName: session.lastName || "",
+        roles,
+        permissions
       };
     } catch (error) {
       console.error("Get current user error:", error);
@@ -902,6 +1606,166 @@ function setupAuthHandlers() {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Failed to check online status"
+      };
+    }
+  });
+  ipcMain.handle("auth:getPermissions", async () => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      return { success: true, data: user.permissions };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get permissions"
+      };
+    }
+  });
+  ipcMain.handle("auth:getRoles", async () => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      return { success: true, data: user.roles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get roles"
+      };
+    }
+  });
+  ipcMain.handle(
+    "auth:checkPermission",
+    async (_event, permissionCode) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes(permissionCode);
+        return { success: true, data: hasPermission };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to check permission"
+        };
+      }
+    }
+  );
+  ipcMain.handle("rbac:getAllRoles", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const roles = rbacManager.getAllRoles();
+      return { success: true, data: roles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get roles"
+      };
+    }
+  });
+  ipcMain.handle("rbac:getAllPermissions", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const permissions = rbacManager.getAllPermissions();
+      return { success: true, data: permissions };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get permissions"
+      };
+    }
+  });
+  ipcMain.handle("users:getAll", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const users = rbacManager.getAllUsers();
+      return { success: true, data: users };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get users"
+      };
+    }
+  });
+  ipcMain.handle("users:getById", async (_event, userId) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const user = rbacManager.getUserById(userId);
+      if (!user) {
+        return { success: false, error: "User not found" };
+      }
+      return { success: true, data: user };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get user"
+      };
+    }
+  });
+  ipcMain.handle(
+    "users:create",
+    async (_event, userData) => {
+      try {
+        const rbacManager = authManager.getRBACManager();
+        const user = rbacManager.createUser(userData);
+        return { success: true, data: user };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to create user"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "users:update",
+    async (_event, userId, userData) => {
+      try {
+        const rbacManager = authManager.getRBACManager();
+        const user = rbacManager.updateUser(userId, userData);
+        if (!user) {
+          return { success: false, error: "User not found" };
+        }
+        return { success: true, data: user };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update user"
+        };
+      }
+    }
+  );
+  ipcMain.handle("users:delete", async (_event, userId) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const success = rbacManager.deleteUser(userId);
+      if (!success) {
+        return { success: false, error: "Failed to delete user" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete user"
+      };
+    }
+  });
+  ipcMain.handle("users:toggleStatus", async (_event, userId) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const user = rbacManager.toggleUserStatus(userId);
+      if (!user) {
+        return { success: false, error: "User not found" };
+      }
+      return { success: true, data: user };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to toggle user status"
       };
     }
   });

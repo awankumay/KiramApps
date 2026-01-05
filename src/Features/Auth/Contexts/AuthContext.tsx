@@ -4,25 +4,34 @@ import {
   useState,
   useEffect,
   ReactNode,
+  useCallback,
 } from "react";
-import type { User } from "@Shared/Types/Electron";
+import type { UserWithRoles } from "@Shared/Types/Electron";
 
 interface AuthContextType {
-  user: User | null;
+  user: UserWithRoles | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  // Auth methods
   login: (
     username: string,
     password: string
   ) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  // RBAC helpers
+  permissions: string[];
+  roles: string[];
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+  hasAllPermissions: (permissions: string[]) => boolean;
+  hasRole: (role: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserWithRoles | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load current user on mount
@@ -84,6 +93,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadCurrentUser();
   };
 
+  // RBAC helper functions
+  const permissions = user?.permissions ?? [];
+  const roles = user?.roles ?? [];
+
+  const hasPermission = useCallback(
+    (permission: string) => {
+      return permissions.includes(permission);
+    },
+    [permissions]
+  );
+
+  const hasAnyPermission = useCallback(
+    (perms: string[]) => {
+      return perms.some((p) => permissions.includes(p));
+    },
+    [permissions]
+  );
+
+  const hasAllPermissions = useCallback(
+    (perms: string[]) => {
+      return perms.every((p) => permissions.includes(p));
+    },
+    [permissions]
+  );
+
+  const hasRole = useCallback(
+    (role: string) => {
+      return roles.includes(role);
+    },
+    [roles]
+  );
+
   const value: AuthContextType = {
     user,
     isAuthenticated: user !== null,
@@ -91,6 +132,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     logout,
     refreshUser,
+    // RBAC
+    permissions,
+    roles,
+    hasPermission,
+    hasAnyPermission,
+    hasAllPermissions,
+    hasRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

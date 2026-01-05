@@ -35,5 +35,40 @@ contextBridge.exposeInMainWorld("api", {
     checkAuthStatus: () => ipcRenderer.invoke("auth:checkAuthStatus"),
     refreshToken: () => ipcRenderer.invoke("auth:refreshToken"),
     isOnline: () => ipcRenderer.invoke("auth:isOnline"),
+    // RBAC methods
+    getPermissions: () => ipcRenderer.invoke("auth:getPermissions"),
+    getRoles: () => ipcRenderer.invoke("auth:getRoles"),
+    checkPermission: (permissionCode: string) =>
+      ipcRenderer.invoke("auth:checkPermission", permissionCode),
+  },
+  rbac: {
+    getAllRoles: () => ipcRenderer.invoke("rbac:getAllRoles"),
+    getAllPermissions: () => ipcRenderer.invoke("rbac:getAllPermissions"),
+  },
+  users: {
+    getAll: () => ipcRenderer.invoke("users:getAll"),
+    getById: (userId: number) => ipcRenderer.invoke("users:getById", userId),
+    create: (userData: {
+      username: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      status?: string;
+      roles?: string[];
+    }) => ipcRenderer.invoke("users:create", userData),
+    update: (
+      userId: number,
+      userData: {
+        username?: string;
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        status?: string;
+        roles?: string[];
+      }
+    ) => ipcRenderer.invoke("users:update", userId, userData),
+    delete: (userId: number) => ipcRenderer.invoke("users:delete", userId),
+    toggleStatus: (userId: number) =>
+      ipcRenderer.invoke("users:toggleStatus", userId),
   },
 });

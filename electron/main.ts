@@ -167,6 +167,224 @@ function setupAuthHandlers() {
       };
     }
   });
+
+  // Get user permissions handler
+  ipcMain.handle("auth:getPermissions", async () => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      return { success: true, data: user.permissions };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get permissions",
+      };
+    }
+  });
+
+  // Get user roles handler
+  ipcMain.handle("auth:getRoles", async () => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      return { success: true, data: user.roles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get roles",
+      };
+    }
+  });
+
+  // Check single permission handler
+  ipcMain.handle(
+    "auth:checkPermission",
+    async (_event, permissionCode: string) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes(permissionCode);
+        return { success: true, data: hasPermission };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to check permission",
+        };
+      }
+    }
+  );
+
+  // Get all available roles (for admin UI)
+  ipcMain.handle("rbac:getAllRoles", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const roles = rbacManager.getAllRoles();
+      return { success: true, data: roles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get roles",
+      };
+    }
+  });
+
+  // Get all available permissions (for admin UI)
+  ipcMain.handle("rbac:getAllPermissions", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const permissions = rbacManager.getAllPermissions();
+      return { success: true, data: permissions };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get permissions",
+      };
+    }
+  });
+
+  // ============================================
+  // User Management CRUD Handlers
+  // ============================================
+
+  // Get all users
+  ipcMain.handle("users:getAll", async () => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const users = rbacManager.getAllUsers();
+      return { success: true, data: users };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get users",
+      };
+    }
+  });
+
+  // Get single user by ID
+  ipcMain.handle("users:getById", async (_event, userId: number) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const user = rbacManager.getUserById(userId);
+      if (!user) {
+        return { success: false, error: "User not found" };
+      }
+      return { success: true, data: user };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get user",
+      };
+    }
+  });
+
+  // Create new user
+  ipcMain.handle(
+    "users:create",
+    async (
+      _event,
+      userData: {
+        username: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        password: string;
+        status?: string;
+        roles?: string[];
+      }
+    ) => {
+      try {
+        const rbacManager = authManager.getRBACManager();
+        const user = rbacManager.createUser(userData);
+        return { success: true, data: user };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to create user",
+        };
+      }
+    }
+  );
+
+  // Update existing user
+  ipcMain.handle(
+    "users:update",
+    async (
+      _event,
+      userId: number,
+      userData: {
+        username?: string;
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        status?: string;
+        roles?: string[];
+      }
+    ) => {
+      try {
+        const rbacManager = authManager.getRBACManager();
+        const user = rbacManager.updateUser(userId, userData);
+        if (!user) {
+          return { success: false, error: "User not found" };
+        }
+        return { success: true, data: user };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to update user",
+        };
+      }
+    }
+  );
+
+  // Delete user
+  ipcMain.handle("users:delete", async (_event, userId: number) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const success = rbacManager.deleteUser(userId);
+      if (!success) {
+        return { success: false, error: "Failed to delete user" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete user",
+      };
+    }
+  });
+
+  // Toggle user status
+  ipcMain.handle("users:toggleStatus", async (_event, userId: number) => {
+    try {
+      const rbacManager = authManager.getRBACManager();
+      const user = rbacManager.toggleUserStatus(userId);
+      if (!user) {
+        return { success: false, error: "User not found" };
+      }
+      return { success: true, data: user };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to toggle user status",
+      };
+    }
+  });
 }
 
 app.whenReady().then(() => {
