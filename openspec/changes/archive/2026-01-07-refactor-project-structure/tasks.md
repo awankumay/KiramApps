@@ -73,15 +73,15 @@ Implementation checklist untuk refactoring ke feature-first PascalCase architect
 
 - [x] **9.1** Run `npm run build` - pastikan tidak ada TypeScript errors
 - [x] **9.2** Run `npm run dev` - pastikan aplikasi berjalan normal
-- [ ] **9.3** Test login flow end-to-end
-- [ ] **9.4** Test dashboard functionality
-- [ ] **9.5** Test `npx shadcn@latest add toast` - pastikan shadcn CLI masih bekerja
+- [x] **9.3** Test login flow end-to-end
+- [x] **9.4** Test dashboard functionality
+- [x] **9.5** Test `npx shadcn@latest add toast` - pastikan shadcn CLI masih bekerja
 
 ## 10. Documentation
 
-- [ ] **10.1** Update `openspec/project.md` File Organization section
-- [ ] **10.2** Update `README.md` dengan struktur baru (jika ada section struktur)
-- [ ] **10.3** Commit semua perubahan dengan message: `refactor: reorganize to feature-first PascalCase structure`
+- [x] **10.1** Update `openspec/project.md` File Organization section
+- [x] **10.2** Update `README.md` dengan struktur baru (jika ada section struktur)
+- [x] **10.3** Commit semua perubahan dengan message: `refactor: reorganize to feature-first PascalCase structure`
 
 ---
 

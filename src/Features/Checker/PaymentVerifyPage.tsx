@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@Shared/Components/UI/Button";
 import { Input } from "@Shared/Components/UI/Input";
@@ -75,6 +77,9 @@ export function PaymentVerifyPage() {
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [verifyNotes, setVerifyNotes] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [proofImageData, setProofImageData] = useState<string | null>(null);
 
   // Data states
   const [payments, setPayments] = useState<PaymentData[]>([]);
@@ -166,6 +171,57 @@ export function PaymentVerifyPage() {
     loadStats();
   }, [page, statusFilter, loadPayments, loadStats]);
 
+  // Load proof image when payment is selected
+  useEffect(() => {
+    const loadProofImage = async () => {
+      if (selectedPayment?.id) {
+        try {
+          console.log("Loading proof for payment ID:", selectedPayment.id);
+          console.log(
+            "Payment has proofImagePath:",
+            selectedPayment.proofImagePath
+          );
+
+          // Use payment ID for better fallback support (file → thumbnail)
+          const response = await window.api.payments.readProofFile(
+            selectedPayment.id
+          );
+
+          console.log("Proof load response:", {
+            success: response.success,
+            hasData: !!response.data?.data,
+            source: response.data?.source,
+            error: response.error,
+          });
+
+          if (response.success && response.data) {
+            setProofImageData(response.data.data);
+            // Log source for debugging
+            if (response.data.source === "thumbnail") {
+              console.log(
+                `Using thumbnail fallback for payment ${selectedPayment.id}`
+              );
+            } else {
+              console.log(
+                `Using original file for payment ${selectedPayment.id}`
+              );
+            }
+          } else {
+            console.warn("No proof data available:", response.error);
+            setProofImageData(null);
+          }
+        } catch (err) {
+          console.error("Failed to load proof image:", err);
+          setProofImageData(null);
+        }
+      } else {
+        setProofImageData(null);
+      }
+    };
+
+    loadProofImage();
+  }, [selectedPayment]);
+
   // Filter payments by search query
   const filteredPayments = payments.filter(
     (p) =>
@@ -183,14 +239,34 @@ export function PaymentVerifyPage() {
 
     try {
       setLoading(true);
+
+      // Prepare proof data if file is selected
+      let proofData: { imageData: string; fileName: string } | undefined;
+      if (proofFile) {
+        const reader = new FileReader();
+        const imageData = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const base64 = reader.result as string;
+            // Remove data URL prefix
+            resolve(base64.split(",")[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(proofFile);
+        });
+        proofData = { imageData, fileName: proofFile.name };
+      }
+
       const response = await window.api.payments.verify(
         selectedPayment.id,
-        verifyNotes
+        verifyNotes,
+        proofData
       );
 
       if (response.success) {
         setShowVerifyDialog(false);
         setVerifyNotes("");
+        setProofFile(null);
+        setProofPreview(null);
         setSelectedPayment(null);
         loadPayments();
         loadStats();
@@ -209,16 +285,36 @@ export function PaymentVerifyPage() {
 
     try {
       setLoading(true);
+
+      // Prepare proof data if file is selected
+      let proofData: { imageData: string; fileName: string } | undefined;
+      if (proofFile) {
+        const reader = new FileReader();
+        const imageData = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const base64 = reader.result as string;
+            // Remove data URL prefix
+            resolve(base64.split(",")[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(proofFile);
+        });
+        proofData = { imageData, fileName: proofFile.name };
+      }
+
       const response = await window.api.payments.reject(
         selectedPayment.id,
         rejectionReason,
-        verifyNotes
+        verifyNotes,
+        proofData
       );
 
       if (response.success) {
         setShowRejectDialog(false);
         setRejectionReason("");
         setVerifyNotes("");
+        setProofFile(null);
+        setProofPreview(null);
         setSelectedPayment(null);
         loadPayments();
         loadStats();
@@ -235,6 +331,40 @@ export function PaymentVerifyPage() {
   const handleRefresh = () => {
     loadPayments();
     loadStats();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "application/pdf",
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      setError("Tipe file tidak didukung. Gunakan JPG, PNG, atau PDF.");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Ukuran file terlalu besar. Maksimal 5MB.");
+      return;
+    }
+
+    setProofFile(file);
+
+    // Create preview for images
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setProofPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setProofPreview(null);
+    }
   };
 
   return (
@@ -544,15 +674,104 @@ export function PaymentVerifyPage() {
                   </div>
                 )}
               </div>
-              <div className="bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px]">
-                <div className="text-center text-muted-foreground">
-                  <DollarSign className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Bukti Pembayaran</p>
-                  <p className="text-xs">
-                    {selectedPayment.reference || "Tidak ada referensi"}
+              {proofImageData ? (
+                <div className="bg-muted rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Bukti Pembayaran
                   </p>
+                  <div className="space-y-2">
+                    <img
+                      src={proofImageData}
+                      alt="Bukti Pembayaran"
+                      className="w-full rounded border"
+                      onError={(e) => {
+                        console.error("Image failed to load:", {
+                          src: proofImageData?.substring(0, 50) + "...",
+                          error: e,
+                        });
+                        setError("Gagal memuat gambar bukti pembayaran");
+                      }}
+                      onLoad={() => {
+                        console.log("Image loaded successfully");
+                      }}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const response =
+                              await window.api.payments.openProofWithViewer(
+                                selectedPayment.id
+                              );
+                            if (!response.success) {
+                              setError(
+                                response.error ||
+                                  "Gagal membuka bukti pembayaran"
+                              );
+                            }
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "Terjadi kesalahan"
+                            );
+                          }
+                        }}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Buka di Viewer
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const fileName = `bukti-pembayaran-${selectedPayment.id}.jpg`;
+                            const response =
+                              await window.api.payments.saveProofAs(
+                                selectedPayment.id,
+                                fileName
+                              );
+                            if (!response.success) {
+                              setError(
+                                response.error || "Gagal menyimpan file"
+                              );
+                            }
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "Terjadi kesalahan"
+                            );
+                          }
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Simpan
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : selectedPayment.proofImagePath ? (
+                <div className="bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px]">
+                  <div className="text-center text-muted-foreground">
+                    <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin" />
+                    <p>Memuat bukti pembayaran...</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px]">
+                  <div className="text-center text-muted-foreground">
+                    <DollarSign className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>Bukti Pembayaran</p>
+                    <p className="text-xs">
+                      {selectedPayment.reference || "Tidak ada referensi"}
+                    </p>
+                  </div>
+                </div>
+              )}
               {selectedPayment.verificationStatus === "REJECTED" &&
                 selectedPayment.rejectionReason && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -604,6 +823,27 @@ export function PaymentVerifyPage() {
                   rows={3}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Upload Bukti Pembayaran (Opsional)</Label>
+                <Input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  onChange={handleFileChange}
+                  disabled={loading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  JPG, PNG, atau PDF. Maksimal 5MB.
+                </p>
+                {proofPreview && (
+                  <div className="mt-2">
+                    <img
+                      src={proofPreview}
+                      alt="Preview"
+                      className="w-full rounded border"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -612,6 +852,8 @@ export function PaymentVerifyPage() {
               onClick={() => {
                 setShowVerifyDialog(false);
                 setVerifyNotes("");
+                setProofFile(null);
+                setProofPreview(null);
               }}
               disabled={loading}
             >
@@ -665,6 +907,27 @@ export function PaymentVerifyPage() {
                   rows={2}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Upload Bukti Pembayaran (Opsional)</Label>
+                <Input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  onChange={handleFileChange}
+                  disabled={loading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  JPG, PNG, atau PDF. Maksimal 5MB.
+                </p>
+                {proofPreview && (
+                  <div className="mt-2">
+                    <img
+                      src={proofPreview}
+                      alt="Preview"
+                      className="w-full rounded border"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -674,6 +937,8 @@ export function PaymentVerifyPage() {
                 setShowRejectDialog(false);
                 setRejectionReason("");
                 setVerifyNotes("");
+                setProofFile(null);
+                setProofPreview(null);
               }}
               disabled={loading}
             >

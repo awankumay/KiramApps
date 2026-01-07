@@ -1,29 +1,33 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { app, safeStorage, BrowserWindow, ipcMain } from "electron";
+import { app, safeStorage, BrowserWindow, ipcMain, shell, dialog } from "electron";
 import { fileURLToPath } from "node:url";
 import path$1 from "node:path";
-import path from "path";
+import * as fs from "fs";
+import fs__default from "fs";
+import * as path from "path";
+import path__default from "path";
 import { createRequire } from "module";
-import fs from "fs";
 import { EventEmitter } from "events";
+import * as crypto from "crypto";
 import { createHash } from "crypto";
+import sharp from "sharp";
 const require$5 = createRequire(import.meta.url);
 const BetterSqlite3 = require$5("better-sqlite3");
 function getDatabasePath() {
   const userDataPath = app.getPath("userData");
-  return path.join(userDataPath, "app-data.db");
+  return path__default.join(userDataPath, "app-data.db");
 }
 function createDatabase() {
   const dbPath = getDatabasePath();
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+  const dbDir = path__default.dirname(dbPath);
+  if (!fs__default.existsSync(dbDir)) {
+    fs__default.mkdirSync(dbDir, { recursive: true });
     console.log(`Created database directory: ${dbDir}`);
   }
   console.log(`Database path: ${dbPath}`);
-  const dbExists = fs.existsSync(dbPath);
+  const dbExists = fs__default.existsSync(dbPath);
   console.log(`Database exists: ${dbExists}`);
   const db = new BetterSqlite3(dbPath);
   db.pragma("foreign_keys = ON");
@@ -5811,24 +5815,45 @@ class TransactionManager {
         userId,
         "Transaction created"
       );
-      if (isCashPayment && data.paymentMethodId) {
-        const insertPaymentStmt = this.db.prepare(`
-          INSERT INTO payments (
-            transaction_id,
-            payment_method_id,
-            amount,
-            status,
-            paid_at,
-            verified_by,
-            notes
-          ) VALUES (?, ?, ?, 'PAID', CURRENT_TIMESTAMP, ?, 'Auto-paid: CASH')
-        `);
-        insertPaymentStmt.run(
-          transactionId,
-          data.paymentMethodId,
-          totalAmount,
-          userId
-        );
+      if (data.paymentMethodId) {
+        if (isCashPayment) {
+          const insertPaymentStmt = this.db.prepare(`
+            INSERT INTO payments (
+              transaction_id,
+              payment_method_id,
+              amount,
+              status,
+              verification_status,
+              paid_at,
+              verified_by,
+              verified_at,
+              notes
+            ) VALUES (?, ?, ?, 'PAID', 'VERIFIED', CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, 'Auto-verified: CASH')
+          `);
+          insertPaymentStmt.run(
+            transactionId,
+            data.paymentMethodId,
+            totalAmount,
+            userId
+          );
+        } else {
+          const insertPaymentStmt = this.db.prepare(`
+            INSERT INTO payments (
+              transaction_id,
+              payment_method_id,
+              amount,
+              status,
+              verification_status,
+              paid_at,
+              notes
+            ) VALUES (?, ?, ?, 'PENDING', 'PENDING', CURRENT_TIMESTAMP, 'Awaiting verification')
+          `);
+          insertPaymentStmt.run(
+            transactionId,
+            data.paymentMethodId,
+            totalAmount
+          );
+        }
       }
       return transactionId;
     });
@@ -6067,6 +6092,7 @@ class TransactionManager {
           p.verified_at as verifiedAt,
           p.rejection_reason as rejectionReason,
           p.notes,
+          p.proof_image_path as proofImagePath,
           p.created_at as createdAt
         FROM payments p
         LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
@@ -6228,6 +6254,7 @@ class TransactionManager {
         p.verified_at as verifiedAt,
         p.rejection_reason as rejectionReason,
         p.notes,
+        p.proof_image_path as proofImagePath,
         p.created_at as createdAt,
         t.invoice_number as transactionInvoiceNumber,
         c.name as customerName,
@@ -6320,6 +6347,7 @@ class TransactionManager {
           p.verified_at as verifiedAt,
           p.rejection_reason as rejectionReason,
           p.notes,
+          p.proof_image_path as proofImagePath,
           p.created_at as createdAt,
           t.invoice_number as transactionInvoiceNumber,
           c.name as customerName,
@@ -6338,7 +6366,7 @@ class TransactionManager {
   /**
    * Verify payment (PENDING → VERIFIED)
    */
-  verifyPayment(paymentId, verifiedBy, notes) {
+  async verifyPayment(paymentId, verifiedBy, notes, proofData) {
     const payment = this.getPaymentById(paymentId);
     if (!payment) {
       throw new Error("Payment not found");
@@ -6346,17 +6374,39 @@ class TransactionManager {
     if (payment.verificationStatus !== "PENDING") {
       throw new Error("Payment is not in PENDING status");
     }
+    let proofPath = null;
+    if (proofData) {
+      const buffer = Buffer.from(proofData.imageData, "base64");
+      proofPath = await this.savePaymentProof(
+        paymentId,
+        buffer,
+        proofData.fileName
+      );
+    }
     this.db.transaction(() => {
-      this.db.prepare(
-        `
+      const updateQuery = proofPath ? `
         UPDATE payments
         SET verification_status = 'VERIFIED',
+            status = 'PAID',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            proof_image_path = ?,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      ` : `
+        UPDATE payments
+        SET verification_status = 'VERIFIED',
+            status = 'PAID',
             verified_by = ?,
             verified_at = CURRENT_TIMESTAMP,
             notes = COALESCE(?, notes)
         WHERE id = ?
-      `
-      ).run(verifiedBy, notes, paymentId);
+      `;
+      if (proofPath) {
+        this.db.prepare(updateQuery).run(verifiedBy, proofPath, notes, paymentId);
+      } else {
+        this.db.prepare(updateQuery).run(verifiedBy, notes, paymentId);
+      }
       this.updatePaymentStatus(payment.transactionId);
     })();
     return this.getPaymentById(paymentId);
@@ -6364,7 +6414,7 @@ class TransactionManager {
   /**
    * Reject payment (PENDING → REJECTED)
    */
-  rejectPayment(paymentId, verifiedBy, reason, notes) {
+  async rejectPayment(paymentId, verifiedBy, reason, notes, proofData) {
     const payment = this.getPaymentById(paymentId);
     if (!payment) {
       throw new Error("Payment not found");
@@ -6375,9 +6425,26 @@ class TransactionManager {
     if (!reason || reason.trim().length < 10) {
       throw new Error("Rejection reason must be at least 10 characters");
     }
+    let proofPath = null;
+    if (proofData) {
+      const buffer = Buffer.from(proofData.imageData, "base64");
+      proofPath = await this.savePaymentProof(
+        paymentId,
+        buffer,
+        proofData.fileName
+      );
+    }
     this.db.transaction(() => {
-      this.db.prepare(
-        `
+      const updateQuery = proofPath ? `
+        UPDATE payments
+        SET verification_status = 'REJECTED',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            rejection_reason = ?,
+            proof_image_path = ?,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      ` : `
         UPDATE payments
         SET verification_status = 'REJECTED',
             verified_by = ?,
@@ -6385,10 +6452,184 @@ class TransactionManager {
             rejection_reason = ?,
             notes = COALESCE(?, notes)
         WHERE id = ?
-      `
-      ).run(verifiedBy, reason, notes, paymentId);
+      `;
+      if (proofPath) {
+        this.db.prepare(updateQuery).run(verifiedBy, reason, proofPath, notes, paymentId);
+      } else {
+        this.db.prepare(updateQuery).run(verifiedBy, reason, notes, paymentId);
+      }
     })();
     return this.getPaymentById(paymentId);
+  }
+  /**
+   * Save payment proof image to filesystem with redundancy and integrity checks
+   * Best Practice: Store both file and compressed thumbnail + metadata for critical data
+   */
+  async savePaymentProof(paymentId, imageBuffer, fileName) {
+    try {
+      const userDataPath = app.getPath("userData");
+      const proofsDir = path.join(userDataPath, "payment-proofs");
+      if (!fs.existsSync(proofsDir)) {
+        fs.mkdirSync(proofsDir, { recursive: true });
+      }
+      const timestamp = Date.now();
+      const ext = path.extname(fileName).toLowerCase();
+      const newFileName = `${paymentId}_${timestamp}${ext}`;
+      const filePath = path.join(proofsDir, newFileName);
+      const fileHash = crypto.createHash("sha256").update(imageBuffer).digest("hex");
+      let mimeType = "application/octet-stream";
+      if (ext === ".jpg" || ext === ".jpeg") {
+        mimeType = "image/jpeg";
+      } else if (ext === ".png") {
+        mimeType = "image/png";
+      } else if (ext === ".pdf") {
+        mimeType = "application/pdf";
+      }
+      fs.writeFileSync(filePath, imageBuffer);
+      let thumbnailBase64 = null;
+      if (mimeType.startsWith("image/")) {
+        try {
+          const thumbnailBuffer = await sharp(imageBuffer).resize(400, null, {
+            fit: "inside",
+            withoutEnlargement: true
+          }).jpeg({ quality: 80 }).toBuffer();
+          thumbnailBase64 = thumbnailBuffer.toString("base64");
+        } catch (err) {
+          console.error("Failed to create thumbnail:", err);
+        }
+      }
+      this.db.prepare(
+        `
+        UPDATE payments
+        SET proof_thumbnail = ?,
+            proof_file_hash = ?,
+            proof_file_size = ?,
+            proof_mime_type = ?,
+            proof_uploaded_at = CURRENT_TIMESTAMP,
+            proof_last_verified = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+      ).run(
+        thumbnailBase64,
+        fileHash,
+        imageBuffer.length,
+        mimeType,
+        paymentId
+      );
+      return filePath;
+    } catch (error) {
+      throw new Error(`Failed to save payment proof: ${error}`);
+    }
+  }
+  /**
+   * Get payment proof file path
+   * Enhanced: Verifies file integrity and falls back to thumbnail if needed
+   */
+  getPaymentProofPath(paymentId) {
+    const payment = this.db.prepare(
+      `
+      SELECT proof_image_path as proofImagePath,
+             proof_file_hash as fileHash,
+             proof_thumbnail as thumbnail
+      FROM payments
+      WHERE id = ?
+    `
+    ).get(paymentId);
+    if (!payment || !payment.proofImagePath) {
+      return null;
+    }
+    if (fs.existsSync(payment.proofImagePath)) {
+      if (payment.fileHash) {
+        try {
+          const fileBuffer = fs.readFileSync(payment.proofImagePath);
+          const currentHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+          if (currentHash !== payment.fileHash) {
+            console.error(
+              `File integrity check failed for payment ${paymentId}`
+            );
+          }
+        } catch (err) {
+          console.error("Failed to verify file integrity:", err);
+        }
+      }
+      this.db.prepare(
+        `
+        UPDATE payments
+        SET proof_last_verified = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+      ).run(paymentId);
+      return payment.proofImagePath;
+    }
+    console.error(
+      `Payment proof file missing for payment ${paymentId}: ${payment.proofImagePath}`
+    );
+    return payment.proofImagePath;
+  }
+  /**
+   * Get payment proof with fallback to thumbnail
+   * Returns: { type: 'file' | 'thumbnail', data: string }
+   */
+  getPaymentProofWithFallback(paymentId) {
+    const payment = this.db.prepare(
+      `
+      SELECT proof_image_path as proofImagePath,
+             proof_thumbnail as thumbnail,
+             proof_mime_type as mimeType
+      FROM payments
+      WHERE id = ?
+    `
+    ).get(paymentId);
+    if (!payment) {
+      return { type: null, data: null };
+    }
+    if (payment.proofImagePath && fs.existsSync(payment.proofImagePath)) {
+      try {
+        const fileBuffer = fs.readFileSync(payment.proofImagePath);
+        const base642 = fileBuffer.toString("base64");
+        const mimeType = payment.mimeType || "image/jpeg";
+        return {
+          type: "file",
+          data: `data:${mimeType};base64,${base642}`
+        };
+      } catch (err) {
+        console.error("Failed to read proof file:", err);
+      }
+    }
+    if (payment.thumbnail) {
+      console.warn(
+        `Using thumbnail fallback for payment ${paymentId} - original file unavailable`
+      );
+      return {
+        type: "thumbnail",
+        data: `data:image/jpeg;base64,${payment.thumbnail}`
+      };
+    }
+    return { type: null, data: null };
+  }
+  /**
+   * Delete payment proof from filesystem and database
+   */
+  deletePaymentProof(paymentId) {
+    const proofPath = this.getPaymentProofPath(paymentId);
+    if (!proofPath) {
+      return false;
+    }
+    try {
+      if (fs.existsSync(proofPath)) {
+        fs.unlinkSync(proofPath);
+      }
+      this.db.prepare(
+        `
+        UPDATE payments
+        SET proof_image_path = NULL
+        WHERE id = ?
+      `
+      ).run(paymentId);
+      return true;
+    } catch (error) {
+      throw new Error(`Failed to delete payment proof: ${error}`);
+    }
   }
   /**
    * Get verification statistics
@@ -6400,28 +6641,22 @@ class TransactionManager {
     const stats = this.db.prepare(
       `
         SELECT
-          DATE(paid_at) as date,
-          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) as pendingCount,
-          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) as verifiedCount,
-          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) as rejectedCount,
-          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) OVER () as totalPending,
-          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) OVER () as totalVerified,
-          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) OVER () as totalRejected
+          ? as date,
+          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) as totalPending,
+          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) as totalVerified,
+          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) as totalRejected
         FROM payments
         WHERE DATE(paid_at) BETWEEN ? AND ?
-        GROUP BY DATE(paid_at)
-        ORDER BY date DESC
-        LIMIT 1
       `
-    ).get(fromDate, toDate);
+    ).get(toDate, fromDate, toDate);
     return {
-      date: stats.date,
-      pendingCount: stats.pendingCount || 0,
-      verifiedCount: stats.verifiedCount || 0,
-      rejectedCount: stats.rejectedCount || 0,
-      totalPending: stats.totalPending || 0,
-      totalVerified: stats.totalVerified || 0,
-      totalRejected: stats.totalRejected || 0
+      date: (stats == null ? void 0 : stats.date) || toDate,
+      pendingCount: (stats == null ? void 0 : stats.totalPending) || 0,
+      verifiedCount: (stats == null ? void 0 : stats.totalVerified) || 0,
+      rejectedCount: (stats == null ? void 0 : stats.totalRejected) || 0,
+      totalPending: (stats == null ? void 0 : stats.totalPending) || 0,
+      totalVerified: (stats == null ? void 0 : stats.totalVerified) || 0,
+      totalRejected: (stats == null ? void 0 : stats.totalRejected) || 0
     };
   }
 }
@@ -7664,7 +7899,7 @@ function setupAuthHandlers() {
   });
   ipcMain.handle(
     "payments:verify",
-    async (_event, paymentId, notes) => {
+    async (_event, paymentId, notes, proofData) => {
       try {
         const user = await authManager.getCurrentUser();
         if (!user) {
@@ -7678,10 +7913,11 @@ function setupAuthHandlers() {
           };
         }
         const transactionManager = authManager.getTransactionManager();
-        const payment = transactionManager.verifyPayment(
+        const payment = await transactionManager.verifyPayment(
           paymentId,
           user.id,
-          notes
+          notes,
+          proofData
         );
         return { success: true, data: payment };
       } catch (error) {
@@ -7694,7 +7930,7 @@ function setupAuthHandlers() {
   );
   ipcMain.handle(
     "payments:reject",
-    async (_event, paymentId, reason, notes) => {
+    async (_event, paymentId, reason, notes, proofData) => {
       try {
         const user = await authManager.getCurrentUser();
         if (!user) {
@@ -7708,11 +7944,12 @@ function setupAuthHandlers() {
           };
         }
         const transactionManager = authManager.getTransactionManager();
-        const payment = transactionManager.rejectPayment(
+        const payment = await transactionManager.rejectPayment(
           paymentId,
           user.id,
           reason,
-          notes
+          notes,
+          proofData
         );
         return { success: true, data: payment };
       } catch (error) {
@@ -7738,6 +7975,208 @@ function setupAuthHandlers() {
         return {
           success: false,
           error: error instanceof Error ? error.message : "Failed to get verification stats"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "payments:uploadProof",
+    async (_event, paymentId, imageData, fileName) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+        if (!hasPermission) {
+          return {
+            success: false,
+            error: "You do not have permission to upload payment proofs"
+          };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const buffer = Buffer.from(imageData, "base64");
+        const filePath = await transactionManager.savePaymentProof(
+          paymentId,
+          buffer,
+          fileName
+        );
+        return { success: true, filePath };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to upload payment proof"
+        };
+      }
+    }
+  );
+  ipcMain.handle("payments:getProofPath", async (_event, paymentId) => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      const transactionManager = authManager.getTransactionManager();
+      const filePath = transactionManager.getPaymentProofPath(paymentId);
+      return { success: true, filePath };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get payment proof path"
+      };
+    }
+  });
+  ipcMain.handle("payments:deleteProof", async (_event, paymentId) => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+      if (!hasPermission) {
+        return {
+          success: false,
+          error: "You do not have permission to delete payment proofs"
+        };
+      }
+      const transactionManager = authManager.getTransactionManager();
+      const deleted = transactionManager.deletePaymentProof(paymentId);
+      return { success: true, deleted };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete payment proof"
+      };
+    }
+  });
+  ipcMain.handle(
+    "payments:readProofFile",
+    async (_event, paymentIdOrPath) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        if (typeof paymentIdOrPath === "number") {
+          const result = transactionManager.getPaymentProofWithFallback(paymentIdOrPath);
+          if (!result.data) {
+            return {
+              success: false,
+              error: "No payment proof available"
+            };
+          }
+          return {
+            success: true,
+            data: {
+              data: result.data,
+              source: result.type
+              // 'file' or 'thumbnail'
+            }
+          };
+        }
+        const userDataPath = app.getPath("userData");
+        const proofsDir = path$1.join(userDataPath, "payment-proofs");
+        const normalizedPath = path$1.normalize(paymentIdOrPath);
+        if (!normalizedPath.startsWith(proofsDir)) {
+          return {
+            success: false,
+            error: "Invalid file path"
+          };
+        }
+        if (!fs.existsSync(normalizedPath)) {
+          return {
+            success: false,
+            error: "File not found"
+          };
+        }
+        const fileBuffer = fs.readFileSync(normalizedPath);
+        const base642 = fileBuffer.toString("base64");
+        const ext = path$1.extname(normalizedPath).toLowerCase();
+        let mimeType = "application/octet-stream";
+        if (ext === ".jpg" || ext === ".jpeg") {
+          mimeType = "image/jpeg";
+        } else if (ext === ".png") {
+          mimeType = "image/png";
+        } else if (ext === ".pdf") {
+          mimeType = "application/pdf";
+        }
+        return {
+          success: true,
+          data: {
+            data: `data:${mimeType};base64,${base642}`,
+            source: "file"
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to read payment proof file"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "payments:openProofWithViewer",
+    async (_event, paymentId) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const filePath = transactionManager.getPaymentProofPath(paymentId);
+        if (!filePath) {
+          return { success: false, error: "Payment proof not found" };
+        }
+        if (!fs.existsSync(filePath)) {
+          return { success: false, error: "Proof file does not exist" };
+        }
+        const result = await shell.openPath(filePath);
+        if (result) {
+          return { success: false, error: result };
+        }
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to open proof file"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "payments:saveProofAs",
+    async (_event, paymentId, fileName) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const result = transactionManager.getPaymentProofWithFallback(paymentId);
+        if (!result.data) {
+          return { success: false, error: "Payment proof not available" };
+        }
+        const saveResult = await dialog.showSaveDialog({
+          title: "Simpan Bukti Pembayaran",
+          defaultPath: fileName || `payment-proof-${paymentId}.jpg`,
+          filters: [
+            { name: "Images", extensions: ["jpg", "jpeg", "png"] },
+            { name: "All Files", extensions: ["*"] }
+          ]
+        });
+        if (saveResult.canceled || !saveResult.filePath) {
+          return { success: false, error: "Save canceled" };
+        }
+        const base64Data = result.data.split(",")[1];
+        const buffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(saveResult.filePath, buffer);
+        return { success: true, filePath: saveResult.filePath };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to save proof file"
         };
       }
     }

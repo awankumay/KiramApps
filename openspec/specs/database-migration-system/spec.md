@@ -1,7 +1,8 @@
-# Database Migration System
+# database-migration-system Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change implement-database-migrations. Update Purpose after archive.
+## Requirements
 ### Requirement: Migration Execution
 
 The system SHALL execute pending database migrations automatically on application startup in version order, with atomic transaction support.
@@ -114,3 +115,4 @@ The system SHALL support rolling back migrations to previous states.
 **Then** the migration changes should be reversed  
 **And** the migration should be removed from the tracking table</content>
 <parameter name="filePath">d:\Project\Example\KiramApps\kiram-site\openspec\changes\implement-database-migrations\specs\database-migration-system\spec.md
+

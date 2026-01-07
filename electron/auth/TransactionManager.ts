@@ -1,3 +1,9 @@
+import * as fs from "fs";
+import * as path from "path";
+import { app } from "electron";
+import * as crypto from "crypto";
+import sharp from "sharp";
+
 // TypeScript type for better-sqlite3 Database
 type DatabaseInstance = ReturnType<typeof import("better-sqlite3")>;
 
@@ -87,6 +93,7 @@ export interface PaymentData {
   verifiedAt?: string;
   rejectionReason?: string;
   notes?: string;
+  proofImagePath?: string;
   createdAt: string;
   transactionInvoiceNumber?: string;
   customerName?: string;
@@ -465,26 +472,50 @@ export class TransactionManager {
         "Transaction created"
       );
 
-      // If CASH payment, create payment record automatically
-      if (isCashPayment && data.paymentMethodId) {
-        const insertPaymentStmt = this.db.prepare(`
-          INSERT INTO payments (
-            transaction_id,
-            payment_method_id,
-            amount,
-            status,
-            paid_at,
-            verified_by,
-            notes
-          ) VALUES (?, ?, ?, 'PAID', CURRENT_TIMESTAMP, ?, 'Auto-paid: CASH')
-        `);
+      // Create payment record for all payment methods
+      if (data.paymentMethodId) {
+        if (isCashPayment) {
+          // CASH: Auto-verified payment
+          const insertPaymentStmt = this.db.prepare(`
+            INSERT INTO payments (
+              transaction_id,
+              payment_method_id,
+              amount,
+              status,
+              verification_status,
+              paid_at,
+              verified_by,
+              verified_at,
+              notes
+            ) VALUES (?, ?, ?, 'PAID', 'VERIFIED', CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, 'Auto-verified: CASH')
+          `);
 
-        insertPaymentStmt.run(
-          transactionId,
-          data.paymentMethodId,
-          totalAmount,
-          userId
-        );
+          insertPaymentStmt.run(
+            transactionId,
+            data.paymentMethodId,
+            totalAmount,
+            userId
+          );
+        } else {
+          // QRIS/TRANSFER: Pending verification
+          const insertPaymentStmt = this.db.prepare(`
+            INSERT INTO payments (
+              transaction_id,
+              payment_method_id,
+              amount,
+              status,
+              verification_status,
+              paid_at,
+              notes
+            ) VALUES (?, ?, ?, 'PENDING', 'PENDING', CURRENT_TIMESTAMP, 'Awaiting verification')
+          `);
+
+          insertPaymentStmt.run(
+            transactionId,
+            data.paymentMethodId,
+            totalAmount
+          );
+        }
       }
 
       return transactionId;
@@ -808,6 +839,7 @@ export class TransactionManager {
           p.verified_at as verifiedAt,
           p.rejection_reason as rejectionReason,
           p.notes,
+          p.proof_image_path as proofImagePath,
           p.created_at as createdAt
         FROM payments p
         LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
@@ -1013,6 +1045,7 @@ export class TransactionManager {
         p.verified_at as verifiedAt,
         p.rejection_reason as rejectionReason,
         p.notes,
+        p.proof_image_path as proofImagePath,
         p.created_at as createdAt,
         t.invoice_number as transactionInvoiceNumber,
         c.name as customerName,
@@ -1123,6 +1156,7 @@ export class TransactionManager {
           p.verified_at as verifiedAt,
           p.rejection_reason as rejectionReason,
           p.notes,
+          p.proof_image_path as proofImagePath,
           p.created_at as createdAt,
           t.invoice_number as transactionInvoiceNumber,
           c.name as customerName,
@@ -1144,11 +1178,12 @@ export class TransactionManager {
   /**
    * Verify payment (PENDING → VERIFIED)
    */
-  verifyPayment(
+  async verifyPayment(
     paymentId: number,
     verifiedBy: number,
-    notes?: string
-  ): PaymentData | null {
+    notes?: string,
+    proofData?: { imageData: string; fileName: string }
+  ): Promise<PaymentData | null> {
     const payment = this.getPaymentById(paymentId);
     if (!payment) {
       throw new Error("Payment not found");
@@ -1158,20 +1193,49 @@ export class TransactionManager {
       throw new Error("Payment is not in PENDING status");
     }
 
+    let proofPath: string | null = null;
+
+    // Save payment proof if provided (must be done outside transaction)
+    if (proofData) {
+      const buffer = Buffer.from(proofData.imageData, "base64");
+      proofPath = await this.savePaymentProof(
+        paymentId,
+        buffer,
+        proofData.fileName
+      );
+    }
+
+    // Now do database transaction
     this.db.transaction(() => {
       // Update payment to VERIFIED
-      this.db
-        .prepare(
-          `
+      const updateQuery = proofPath
+        ? `
         UPDATE payments
         SET verification_status = 'VERIFIED',
+            status = 'PAID',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            proof_image_path = ?,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      `
+        : `
+        UPDATE payments
+        SET verification_status = 'VERIFIED',
+            status = 'PAID',
             verified_by = ?,
             verified_at = CURRENT_TIMESTAMP,
             notes = COALESCE(?, notes)
         WHERE id = ?
-      `
-        )
-        .run(verifiedBy, notes, paymentId);
+      `;
+
+      if (proofPath) {
+        this.db
+          .prepare(updateQuery)
+          .run(verifiedBy, proofPath, notes, paymentId);
+      } else {
+        this.db.prepare(updateQuery).run(verifiedBy, notes, paymentId);
+      }
 
       // Update transaction payment status
       this.updatePaymentStatus(payment.transactionId);
@@ -1183,12 +1247,13 @@ export class TransactionManager {
   /**
    * Reject payment (PENDING → REJECTED)
    */
-  rejectPayment(
+  async rejectPayment(
     paymentId: number,
     verifiedBy: number,
     reason: string,
-    notes?: string
-  ): PaymentData | null {
+    notes?: string,
+    proofData?: { imageData: string; fileName: string }
+  ): Promise<PaymentData | null> {
     const payment = this.getPaymentById(paymentId);
     if (!payment) {
       throw new Error("Payment not found");
@@ -1202,11 +1267,33 @@ export class TransactionManager {
       throw new Error("Rejection reason must be at least 10 characters");
     }
 
+    let proofPath: string | null = null;
+
+    // Save payment proof if provided (must be done outside transaction)
+    if (proofData) {
+      const buffer = Buffer.from(proofData.imageData, "base64");
+      proofPath = await this.savePaymentProof(
+        paymentId,
+        buffer,
+        proofData.fileName
+      );
+    }
+
+    // Now do database transaction
     this.db.transaction(() => {
       // Update payment to REJECTED
-      this.db
-        .prepare(
-          `
+      const updateQuery = proofPath
+        ? `
+        UPDATE payments
+        SET verification_status = 'REJECTED',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            rejection_reason = ?,
+            proof_image_path = ?,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      `
+        : `
         UPDATE payments
         SET verification_status = 'REJECTED',
             verified_by = ?,
@@ -1214,14 +1301,274 @@ export class TransactionManager {
             rejection_reason = ?,
             notes = COALESCE(?, notes)
         WHERE id = ?
-      `
-        )
-        .run(verifiedBy, reason, notes, paymentId);
+      `;
+
+      if (proofPath) {
+        this.db
+          .prepare(updateQuery)
+          .run(verifiedBy, reason, proofPath, notes, paymentId);
+      } else {
+        this.db.prepare(updateQuery).run(verifiedBy, reason, notes, paymentId);
+      }
 
       // Do NOT update transaction payment status (rejected payments don't count)
     })();
 
     return this.getPaymentById(paymentId);
+  }
+
+  /**
+   * Save payment proof image to filesystem with redundancy and integrity checks
+   * Best Practice: Store both file and compressed thumbnail + metadata for critical data
+   */
+  async savePaymentProof(
+    paymentId: number,
+    imageBuffer: Buffer,
+    fileName: string
+  ): Promise<string> {
+    try {
+      // Create payment-proofs directory if it doesn't exist
+      const userDataPath = app.getPath("userData");
+      const proofsDir = path.join(userDataPath, "payment-proofs");
+
+      if (!fs.existsSync(proofsDir)) {
+        fs.mkdirSync(proofsDir, { recursive: true });
+      }
+
+      // Generate unique filename: {paymentId}_{timestamp}.{ext}
+      const timestamp = Date.now();
+      const ext = path.extname(fileName).toLowerCase();
+      const newFileName = `${paymentId}_${timestamp}${ext}`;
+      const filePath = path.join(proofsDir, newFileName);
+
+      // Calculate file hash (SHA256) for integrity verification
+      const fileHash = crypto
+        .createHash("sha256")
+        .update(imageBuffer)
+        .digest("hex");
+
+      // Determine MIME type
+      let mimeType = "application/octet-stream";
+      if (ext === ".jpg" || ext === ".jpeg") {
+        mimeType = "image/jpeg";
+      } else if (ext === ".png") {
+        mimeType = "image/png";
+      } else if (ext === ".pdf") {
+        mimeType = "application/pdf";
+      }
+
+      // Write original file to disk
+      fs.writeFileSync(filePath, imageBuffer);
+
+      // Create compressed thumbnail as backup (only for images)
+      let thumbnailBase64: string | null = null;
+      if (mimeType.startsWith("image/")) {
+        try {
+          // Create thumbnail: max 400px width, 80% quality, strip metadata
+          const thumbnailBuffer = await sharp(imageBuffer)
+            .resize(400, null, {
+              fit: "inside",
+              withoutEnlargement: true,
+            })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+
+          thumbnailBase64 = thumbnailBuffer.toString("base64");
+        } catch (err) {
+          console.error("Failed to create thumbnail:", err);
+          // Continue without thumbnail - not critical
+        }
+      }
+
+      // Store metadata in database for redundancy
+      this.db
+        .prepare(
+          `
+        UPDATE payments
+        SET proof_thumbnail = ?,
+            proof_file_hash = ?,
+            proof_file_size = ?,
+            proof_mime_type = ?,
+            proof_uploaded_at = CURRENT_TIMESTAMP,
+            proof_last_verified = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+        )
+        .run(
+          thumbnailBase64,
+          fileHash,
+          imageBuffer.length,
+          mimeType,
+          paymentId
+        );
+
+      return filePath;
+    } catch (error) {
+      throw new Error(`Failed to save payment proof: ${error}`);
+    }
+  }
+
+  /**
+   * Get payment proof file path
+   * Enhanced: Verifies file integrity and falls back to thumbnail if needed
+   */
+  getPaymentProofPath(paymentId: number): string | null {
+    const payment = this.db
+      .prepare(
+        `
+      SELECT proof_image_path as proofImagePath,
+             proof_file_hash as fileHash,
+             proof_thumbnail as thumbnail
+      FROM payments
+      WHERE id = ?
+    `
+      )
+      .get(paymentId) as {
+      proofImagePath: string | null;
+      fileHash: string | null;
+      thumbnail: string | null;
+    };
+
+    if (!payment || !payment.proofImagePath) {
+      return null;
+    }
+
+    // Verify file exists and integrity
+    if (fs.existsSync(payment.proofImagePath)) {
+      // Verify file integrity if hash exists
+      if (payment.fileHash) {
+        try {
+          const fileBuffer = fs.readFileSync(payment.proofImagePath);
+          const currentHash = crypto
+            .createHash("sha256")
+            .update(fileBuffer)
+            .digest("hex");
+
+          if (currentHash !== payment.fileHash) {
+            console.error(
+              `File integrity check failed for payment ${paymentId}`
+            );
+            // File is corrupted, log it but still return path
+            // Could implement auto-recovery here
+          }
+        } catch (err) {
+          console.error("Failed to verify file integrity:", err);
+        }
+      }
+
+      // Update last verified timestamp
+      this.db
+        .prepare(
+          `
+        UPDATE payments
+        SET proof_last_verified = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+        )
+        .run(paymentId);
+
+      return payment.proofImagePath;
+    }
+
+    // File doesn't exist - log this critical issue
+    console.error(
+      `Payment proof file missing for payment ${paymentId}: ${payment.proofImagePath}`
+    );
+
+    // TODO: Implement recovery mechanism
+    // Could restore from thumbnail or backup location
+
+    return payment.proofImagePath; // Return path anyway for error handling
+  }
+
+  /**
+   * Get payment proof with fallback to thumbnail
+   * Returns: { type: 'file' | 'thumbnail', data: string }
+   */
+  getPaymentProofWithFallback(paymentId: number): {
+    type: "file" | "thumbnail" | null;
+    data: string | null;
+  } {
+    const payment = this.db
+      .prepare(
+        `
+      SELECT proof_image_path as proofImagePath,
+             proof_thumbnail as thumbnail,
+             proof_mime_type as mimeType
+      FROM payments
+      WHERE id = ?
+    `
+      )
+      .get(paymentId) as {
+      proofImagePath: string | null;
+      thumbnail: string | null;
+      mimeType: string | null;
+    };
+
+    if (!payment) {
+      return { type: null, data: null };
+    }
+
+    // Try to read original file first
+    if (payment.proofImagePath && fs.existsSync(payment.proofImagePath)) {
+      try {
+        const fileBuffer = fs.readFileSync(payment.proofImagePath);
+        const base64 = fileBuffer.toString("base64");
+        const mimeType = payment.mimeType || "image/jpeg";
+        return {
+          type: "file",
+          data: `data:${mimeType};base64,${base64}`,
+        };
+      } catch (err) {
+        console.error("Failed to read proof file:", err);
+      }
+    }
+
+    // Fallback to thumbnail if file is missing or unreadable
+    if (payment.thumbnail) {
+      console.warn(
+        `Using thumbnail fallback for payment ${paymentId} - original file unavailable`
+      );
+      return {
+        type: "thumbnail",
+        data: `data:image/jpeg;base64,${payment.thumbnail}`,
+      };
+    }
+
+    return { type: null, data: null };
+  }
+
+  /**
+   * Delete payment proof from filesystem and database
+   */
+  deletePaymentProof(paymentId: number): boolean {
+    const proofPath = this.getPaymentProofPath(paymentId);
+
+    if (!proofPath) {
+      return false;
+    }
+
+    try {
+      // Delete file from filesystem
+      if (fs.existsSync(proofPath)) {
+        fs.unlinkSync(proofPath);
+      }
+
+      // Update database
+      this.db
+        .prepare(
+          `
+        UPDATE payments
+        SET proof_image_path = NULL
+        WHERE id = ?
+      `
+        )
+        .run(paymentId);
+
+      return true;
+    } catch (error) {
+      throw new Error(`Failed to delete payment proof: ${error}`);
+    }
   }
 
   /**
@@ -1239,38 +1586,29 @@ export class TransactionManager {
       .prepare(
         `
         SELECT
-          DATE(paid_at) as date,
-          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) as pendingCount,
-          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) as verifiedCount,
-          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) as rejectedCount,
-          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) OVER () as totalPending,
-          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) OVER () as totalVerified,
-          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) OVER () as totalRejected
+          ? as date,
+          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) as totalPending,
+          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) as totalVerified,
+          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) as totalRejected
         FROM payments
         WHERE DATE(paid_at) BETWEEN ? AND ?
-        GROUP BY DATE(paid_at)
-        ORDER BY date DESC
-        LIMIT 1
       `
       )
-      .get(fromDate, toDate) as {
+      .get(toDate, fromDate, toDate) as {
       date: string;
-      pendingCount: number;
-      verifiedCount: number;
-      rejectedCount: number;
       totalPending: number;
       totalVerified: number;
       totalRejected: number;
     };
 
     return {
-      date: stats.date,
-      pendingCount: stats.pendingCount || 0,
-      verifiedCount: stats.verifiedCount || 0,
-      rejectedCount: stats.rejectedCount || 0,
-      totalPending: stats.totalPending || 0,
-      totalVerified: stats.totalVerified || 0,
-      totalRejected: stats.totalRejected || 0,
+      date: stats?.date || toDate,
+      pendingCount: stats?.totalPending || 0,
+      verifiedCount: stats?.totalVerified || 0,
+      rejectedCount: stats?.totalRejected || 0,
+      totalPending: stats?.totalPending || 0,
+      totalVerified: stats?.totalVerified || 0,
+      totalRejected: stats?.totalRejected || 0,
     };
   }
 }

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
 // import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import * as fs from "fs";
 import { createDatabase } from "./auth/database";
 import { AuthManager } from "./auth/AuthManager";
 
@@ -1310,7 +1311,12 @@ function setupAuthHandlers() {
   // Verify payment (PENDING → VERIFIED)
   ipcMain.handle(
     "payments:verify",
-    async (_event, paymentId: number, notes?: string) => {
+    async (
+      _event,
+      paymentId: number,
+      notes?: string,
+      proofData?: { imageData: string; fileName: string }
+    ) => {
       try {
         const user = await authManager.getCurrentUser();
         if (!user) {
@@ -1327,10 +1333,11 @@ function setupAuthHandlers() {
         }
 
         const transactionManager = authManager.getTransactionManager();
-        const payment = transactionManager.verifyPayment(
+        const payment = await transactionManager.verifyPayment(
           paymentId,
           user.id,
-          notes
+          notes,
+          proofData
         );
         return { success: true, data: payment };
       } catch (error) {
@@ -1346,7 +1353,13 @@ function setupAuthHandlers() {
   // Reject payment (PENDING → REJECTED)
   ipcMain.handle(
     "payments:reject",
-    async (_event, paymentId: number, reason: string, notes?: string) => {
+    async (
+      _event,
+      paymentId: number,
+      reason: string,
+      notes?: string,
+      proofData?: { imageData: string; fileName: string }
+    ) => {
       try {
         const user = await authManager.getCurrentUser();
         if (!user) {
@@ -1363,11 +1376,12 @@ function setupAuthHandlers() {
         }
 
         const transactionManager = authManager.getTransactionManager();
-        const payment = transactionManager.rejectPayment(
+        const payment = await transactionManager.rejectPayment(
           paymentId,
           user.id,
           reason,
-          notes
+          notes,
+          proofData
         );
         return { success: true, data: payment };
       } catch (error) {
@@ -1400,6 +1414,281 @@ function setupAuthHandlers() {
             error instanceof Error
               ? error.message
               : "Failed to get verification stats",
+        };
+      }
+    }
+  );
+
+  // Upload payment proof
+  ipcMain.handle(
+    "payments:uploadProof",
+    async (_event, paymentId: number, imageData: string, fileName: string) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+
+        // Check VERIFY_PAYMENT permission
+        const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+        if (!hasPermission) {
+          return {
+            success: false,
+            error: "You do not have permission to upload payment proofs",
+          };
+        }
+
+        const transactionManager = authManager.getTransactionManager();
+        const buffer = Buffer.from(imageData, "base64");
+        const filePath = await transactionManager.savePaymentProof(
+          paymentId,
+          buffer,
+          fileName
+        );
+        return { success: true, filePath };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to upload payment proof",
+        };
+      }
+    }
+  );
+
+  // Get payment proof path
+  ipcMain.handle("payments:getProofPath", async (_event, paymentId: number) => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+
+      const transactionManager = authManager.getTransactionManager();
+      const filePath = transactionManager.getPaymentProofPath(paymentId);
+      return { success: true, filePath };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get payment proof path",
+      };
+    }
+  });
+
+  // Delete payment proof
+  ipcMain.handle("payments:deleteProof", async (_event, paymentId: number) => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+
+      // Check VERIFY_PAYMENT permission
+      const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+      if (!hasPermission) {
+        return {
+          success: false,
+          error: "You do not have permission to delete payment proofs",
+        };
+      }
+
+      const transactionManager = authManager.getTransactionManager();
+      const deleted = transactionManager.deletePaymentProof(paymentId);
+      return { success: true, deleted };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete payment proof",
+      };
+    }
+  });
+
+  // Read payment proof file as base64
+  ipcMain.handle(
+    "payments:readProofFile",
+    async (_event, paymentIdOrPath: number | string) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+
+        const transactionManager = authManager.getTransactionManager();
+
+        // If it's a number, use the new method with fallback
+        if (typeof paymentIdOrPath === "number") {
+          const result =
+            transactionManager.getPaymentProofWithFallback(paymentIdOrPath);
+
+          if (!result.data) {
+            return {
+              success: false,
+              error: "No payment proof available",
+            };
+          }
+
+          return {
+            success: true,
+            data: {
+              data: result.data,
+              source: result.type, // 'file' or 'thumbnail'
+            },
+          };
+        }
+
+        // Legacy: If it's a string path, read file directly
+        // Security check: ensure file is in payment-proofs directory
+        const userDataPath = app.getPath("userData");
+        const proofsDir = path.join(userDataPath, "payment-proofs");
+        const normalizedPath = path.normalize(paymentIdOrPath);
+
+        if (!normalizedPath.startsWith(proofsDir)) {
+          return {
+            success: false,
+            error: "Invalid file path",
+          };
+        }
+
+        // Check if file exists
+        if (!fs.existsSync(normalizedPath)) {
+          return {
+            success: false,
+            error: "File not found",
+          };
+        }
+
+        // Read file as base64
+        const fileBuffer = fs.readFileSync(normalizedPath);
+        const base64 = fileBuffer.toString("base64");
+        const ext = path.extname(normalizedPath).toLowerCase();
+
+        // Determine MIME type
+        let mimeType = "application/octet-stream";
+        if (ext === ".jpg" || ext === ".jpeg") {
+          mimeType = "image/jpeg";
+        } else if (ext === ".png") {
+          mimeType = "image/png";
+        } else if (ext === ".pdf") {
+          mimeType = "application/pdf";
+        }
+
+        return {
+          success: true,
+          data: {
+            data: `data:${mimeType};base64,${base64}`,
+            source: "file",
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to read payment proof file",
+        };
+      }
+    }
+  );
+
+  // Open payment proof with native image viewer
+  ipcMain.handle(
+    "payments:openProofWithViewer",
+    async (_event, paymentId: number) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+
+        const transactionManager = authManager.getTransactionManager();
+        const filePath = transactionManager.getPaymentProofPath(paymentId);
+
+        if (!filePath) {
+          return { success: false, error: "Payment proof not found" };
+        }
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+          return { success: false, error: "Proof file does not exist" };
+        }
+
+        // Open with default system viewer
+        const result = await shell.openPath(filePath);
+
+        if (result) {
+          // openPath returns error string if failed, empty string if success
+          return { success: false, error: result };
+        }
+
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to open proof file",
+        };
+      }
+    }
+  );
+
+  // Save payment proof to user-selected location
+  ipcMain.handle(
+    "payments:saveProofAs",
+    async (_event, paymentId: number, fileName: string) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+
+        const transactionManager = authManager.getTransactionManager();
+        const result =
+          transactionManager.getPaymentProofWithFallback(paymentId);
+
+        if (!result.data) {
+          return { success: false, error: "Payment proof not available" };
+        }
+
+        // Show save dialog
+        const saveResult = await dialog.showSaveDialog({
+          title: "Simpan Bukti Pembayaran",
+          defaultPath: fileName || `payment-proof-${paymentId}.jpg`,
+          filters: [
+            { name: "Images", extensions: ["jpg", "jpeg", "png"] },
+            { name: "All Files", extensions: ["*"] },
+          ],
+        });
+
+        if (saveResult.canceled || !saveResult.filePath) {
+          return { success: false, error: "Save canceled" };
+        }
+
+        // Convert base64 data URL to buffer
+        const base64Data = result.data.split(",")[1];
+        const buffer = Buffer.from(base64Data, "base64");
+
+        // Write to selected location
+        fs.writeFileSync(saveResult.filePath, buffer);
+
+        return { success: true, filePath: saveResult.filePath };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to save proof file",
         };
       }
     }

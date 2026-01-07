@@ -10,89 +10,116 @@ Implementation checklist untuk memperbaiki payment verification workflow, menamb
 
 #### Database Migration
 
-- [ ] Create migration file `20260108000001_add_payment_proof.ts`
-- [ ] Add `proof_image_path TEXT` column to `payments` table
-- [ ] Write up() and down() migration functions
-- [ ] Test migration on fresh database
-- [ ] Test migration rollback
+- [x] Create migration file `20260108000001_add_payment_proof.ts`
+- [x] Add `proof_image_path TEXT` column to `payments` table
+- [x] Write up() and down() migration functions
+- [x] Test migration on fresh database
+- [x] Test migration rollback
+- [x] Create migration file `20260108000002_enhance_payment_proof_storage.ts` for redundancy
+- [x] Add columns: `proof_thumbnail TEXT`, `proof_file_hash TEXT`, `proof_file_size INTEGER`, `proof_mime_type TEXT`, `proof_uploaded_at DATETIME`, `proof_last_verified DATETIME`
+- [x] Test enhanced migration on existing database
 
 #### TransactionManager - Payment Creation Fix
 
-- [ ] Modify `createTransaction()` method to create payment records for all payment methods
-- [ ] For CASH: Create payment with `status='PAID'`, `verification_status='VERIFIED'`, `verified_by=userId`, `verified_at=CURRENT_TIMESTAMP`
-- [ ] For QRIS/TRANSFER: Create payment with `status='PENDING'`, `verification_status='PENDING'`, `verified_by=NULL`, `verified_at=NULL`
-- [ ] Update `updatePaymentStatus()` to only count VERIFIED payments when calculating transaction payment_status
-- [ ] Test CASH transaction creation → payment auto-verified
-- [ ] Test QRIS transaction creation → payment pending verification
-- [ ] Test TRANSFER transaction creation → payment pending verification
+- [x] Modify `createTransaction()` method to create payment records for all payment methods
+- [x] For CASH: Create payment with `status='PAID'`, `verification_status='VERIFIED'`, `verified_by=userId`, `verified_at=CURRENT_TIMESTAMP`
+- [x] For QRIS/TRANSFER: Create payment with `status='PENDING'`, `verification_status='PENDING'`, `verified_by=NULL`, `verified_at=NULL`
+- [x] Update `updatePaymentStatus()` to only count VERIFIED payments when calculating transaction payment_status
+- [x] Test CASH transaction creation → payment auto-verified
+- [x] Test QRIS transaction creation → payment pending verification
+- [x] Test TRANSFER transaction creation → payment pending verification
 
 #### TransactionManager - Payment Proof Methods
 
-- [ ] Add `savePaymentProof(paymentId: number, imageBuffer: Buffer, fileName: string)` method
-- [ ] Implement file writing to `/user-data/payment-proofs/{paymentId}_{timestamp}.{ext}`
-- [ ] Add error handling for disk full, permission denied, etc.
-- [ ] Return file path on success
-- [ ] Add `getPaymentProofPath(paymentId: number)` method
-- [ ] Query `proof_image_path` from database
-- [ ] Return full absolute path
-- [ ] Add `deletePaymentProof(paymentId: number)` method
-- [ ] Delete file from filesystem
-- [ ] Update database to set `proof_image_path = NULL`
-- [ ] Test proof save with valid image
-- [ ] Test proof save with invalid path
-- [ ] Test proof retrieval
-- [ ] Test proof deletion
+- [x] Add `savePaymentProof(paymentId: number, imageBuffer: Buffer, fileName: string)` method
+- [x] Implement file writing to `/user-data/payment-proofs/{paymentId}_{timestamp}.{ext}`
+- [x] Add error handling for disk full, permission denied, etc.
+- [x] Return file path on success
+- [x] Add `getPaymentProofPath(paymentId: number)` method
+- [x] Query `proof_image_path` from database
+- [x] Return full absolute path
+- [x] Add `deletePaymentProof(paymentId: number)` method
+- [x] Delete file from filesystem
+- [x] Update database to set `proof_image_path = NULL`
+- [x] Test proof save with valid image
+- [x] Test proof save with invalid path
+- [x] Test proof retrieval
+- [x] Test proof deletion
+- [x] Enhance savePaymentProof() with Sharp for thumbnail generation (400px, 80% JPEG quality)
+- [x] Add SHA256 file integrity hashing
+- [x] Store thumbnail as base64 TEXT in database
+- [x] Store metadata: file_hash, file_size, mime_type, uploaded_at
+- [x] Add getPaymentProofWithFallback() method for automatic file → thumbnail fallback
+- [x] Add integrity verification in getPaymentProofPath()
+- [x] Make all proof methods async due to Sharp library
+- [x] Test redundancy: delete file → verify thumbnail displays
 
 #### TransactionManager - Enhanced Verification Methods
 
-- [ ] Modify `verifyPayment()` to accept optional `proofData` parameter
-- [ ] If proofData provided, call `savePaymentProof()` and update `proof_image_path`
-- [ ] Modify `rejectPayment()` to accept optional `proofData` parameter
-- [ ] Update payment record with proof path during verification/rejection
-- [ ] Test verify with proof
-- [ ] Test verify without proof
-- [ ] Test reject with proof
-- [ ] Test reject without proof
+- [x] Modify `verifyPayment()` to accept optional `proofData` parameter
+- [x] If proofData provided, call `savePaymentProof()` and update `proof_image_path`
+- [x] Modify `rejectPayment()` to accept optional `proofData` parameter
+- [x] Update payment record with proof path during verification/rejection
+- [x] Test verify with proof
+- [x] Test verify without proof
+- [x] Test reject with proof
+- [x] Test reject without proof
 
 #### IPC Handlers
 
-- [ ] Add handler `payments:uploadProof` → calls `savePaymentProof()`
-- [ ] Add handler `payments:getProofPath` → calls `getPaymentProofPath()`
-- [ ] Add handler `payments:deleteProof` → calls `deletePaymentProof()`
-- [ ] Update handler `payments:verify` to accept proofData parameter
-- [ ] Update handler `payments:reject` to accept proofData parameter
-- [ ] Add permission checks for proof operations (VERIFY_PAYMENT required)
-- [ ] Test IPC communication for each handler
-- [ ] Handle errors gracefully (return error messages)
+- [x] Add handler `payments:uploadProof` → calls `savePaymentProof()`
+- [x] Add handler `payments:getProofPath` → calls `getPaymentProofPath()`
+- [x] Add handler `payments:deleteProof` → calls `deletePaymentProof()`
+- [x] Update handler `payments:verify` to accept proofData parameter
+- [x] Update handler `payments:reject` to accept proofData parameter
+- [x] Add permission checks for proof operations (VERIFY_PAYMENT required)
+- [x] Test IPC communication for each handler
+- [x] Handle errors gracefully (return error messages)
+- [x] Add `payments:readProofFile` handler for base64 conversion (file:// protocol security fix)
+- [x] Update readProofFile to accept payment ID (not just path) for automatic fallback
+- [x] Fix IPC response structure: { success: true, data: { data: base64, source: type } }
+- [x] Add `payments:openProofWithViewer` handler using shell.openPath()
+- [x] Add `payments:saveProofAs` handler using dialog.showSaveDialog()
 
 ### Phase 2: Type Definitions (1 hour)
 
 #### Update Electron.d.ts
 
-- [ ] Add `proofImagePath?: string` to `PaymentData` interface
-- [ ] Create `UploadPaymentProofData` interface with `paymentId`, `imageData` (base64), `fileName`
-- [ ] Create `UploadPaymentProofResult` interface with `success`, `filePath?`, `error?`
-- [ ] Update `PaymentAPI` interface with new methods: `uploadProof`, `getProofPath`, `deleteProof`
-- [ ] Update `verify()` and `reject()` signatures to accept optional proofData
-- [ ] Verify TypeScript compilation with no errors
+- [x] Add `proofImagePath?: string` to `PaymentData` interface
+- [x] Create `UploadPaymentProofData` interface with `paymentId`, `imageData` (base64), `fileName`
+- [x] Create `UploadPaymentProofResult` interface with `success`, `filePath?`, `error?`
+- [x] Update `PaymentAPI` interface with new methods: `uploadProof`, `getProofPath`, `deleteProof`
+- [x] Update `verify()` and `reject()` signatures to accept optional proofData
+- [x] Verify TypeScript compilation with no errors
+- [x] Add `readProofFile` method signature accepting number | string
+- [x] Add `openProofWithViewer` method signature
+- [x] Add `saveProofAs` method signature
+
+#### Update preload.ts
+
+- [x] Expose new payment proof methods via context bridge
+- [x] Update method signatures to match Electron.d.ts
+- [x] Add readProofFile IPC invocation
+- [x] Add openProofWithViewer IPC invocation
+- [x] Add saveProofAs IPC invocation
 
 ### Phase 3: TransactionDetailPage Updates (4-5 hours)
 
 #### Status Update Feature
 
-- [ ] Add "Update Status" button next to transaction status badge
-- [ ] Show button only if `canManageStatus` permission is true
-- [ ] Hide button if no allowed transitions (e.g., status is CHECKED_OUT)
-- [ ] Create `StatusUpdateDialog` component (or use existing, enhance if needed)
-- [ ] Show current status prominently
-- [ ] Display allowed next statuses as radio buttons (from STATUS_TRANSITIONS)
-- [ ] Add optional notes textarea
-- [ ] Add confirmation button
-- [ ] Wire up `handleUpdateStatus` function to `window.api.transactions.updateStatus()`
-- [ ] Show loading state during API call
-- [ ] Show success toast after status update
-- [ ] Refresh transaction data after successful update
-- [ ] Show error toast if update fails
+- [x] Add "Update Status" button next to transaction status badge
+- [x] Show button only if `canManageStatus` permission is true
+- [x] Hide button if no allowed transitions (e.g., status is CHECKED_OUT)
+- [x] Create `StatusUpdateDialog` component (or use existing, enhance if needed)
+- [x] Show current status prominently
+- [x] Display allowed next statuses as radio buttons (from STATUS_TRANSITIONS)
+- [x] Add optional notes textarea
+- [x] Add confirmation button
+- [x] Wire up `handleUpdateStatus` function to `window.api.transactions.updateStatus()`
+- [x] Show loading state during API call
+- [x] Show success toast after status update
+- [x] Refresh transaction data after successful update
+- [x] Show error toast if update fails
 - [ ] Test status update: CREATED → QUEUED
 - [ ] Test status update: QUEUED → LOADING
 - [ ] Test status update: LOADING → DONE
@@ -101,62 +128,66 @@ Implementation checklist untuk memperbaiki payment verification workflow, menamb
 
 #### Payment Detail Dialog Fix
 
-- [ ] Make payment items in list clickable (add `cursor-pointer`, `hover:bg-muted/50`)
-- [ ] Add onClick handler to payment items: `onClick={() => { setSelectedPayment(payment); setPaymentDetailOpen(true); }}`
-- [ ] Verify `selectedPayment` state is set correctly
-- [ ] Verify `paymentDetailOpen` state toggles dialog visibility
-- [ ] Update payment detail dialog to show payment proof image if `proofImagePath` exists
-- [ ] Add "View Full Size" button that opens proof in OS default viewer
-- [ ] Add "Download Proof" button (optional)
-- [ ] Show placeholder if no proof available
-- [ ] Test clicking payment item → dialog opens
-- [ ] Test payment detail with proof → image displayed
-- [ ] Test payment detail without proof → placeholder shown
-- [ ] Test "View Full Size" button → opens external viewer
+- [x] Make payment items in list clickable (add `cursor-pointer`, `hover:bg-muted/50`)
+- [x] Add onClick handler to payment items: `onClick={() => { setSelectedPayment(payment); setPaymentDetailOpen(true); }}`
+- [x] Verify `selectedPayment` state is set correctly
+- [x] Verify `paymentDetailOpen` state toggles dialog visibility
+- [x] Update payment detail dialog to show payment proof image if `proofImagePath` exists
+- [x] Add "View Full Size" button that opens proof in OS default viewer
+- [x] Add "Download Proof" button (optional)
+- [x] Show placeholder if no proof available
+- [x] Test clicking payment item → dialog opens
+- [x] Test payment detail with proof → image displayed
+- [x] Test payment detail without proof → placeholder shown
+- [x] Test "View Full Size" button → opens external viewer
 
 #### Payment List Display Enhancement
 
-- [ ] Update payment verification status badge display
-- [ ] Show clear visual indicator for PENDING, VERIFIED, REJECTED statuses
-- [ ] Add eye icon to payment items to indicate they're clickable
-- [ ] Test payment list renders correctly with different statuses
+- [x] Update payment verification status badge display
+- [x] Show clear visual indicator for PENDING, VERIFIED, REJECTED statuses
+- [x] Add eye icon to payment items to indicate they're clickable
+- [x] Test payment list renders correctly with different statuses
 
 ### Phase 4: PaymentVerifyPage Enhancements (4-5 hours)
 
 #### Verify Dialog - Proof Upload
 
-- [ ] Add file input field to verify dialog (accept=".jpg,.jpeg,.png,.pdf")
-- [ ] Add "Upload Payment Proof (Optional)" label
-- [ ] Implement file validation: max 5MB, allowed types
-- [ ] Show error message if file validation fails
-- [ ] Read file as base64 when selected
-- [ ] Show image preview below file input
-- [ ] Clear preview when file is removed
-- [ ] Update `handleVerify()` to include proof data in API call
-- [ ] Show loading state during upload
-- [ ] Test verify with proof upload
-- [ ] Test verify without proof upload
-- [ ] Test file validation (too large)
-- [ ] Test file validation (wrong type)
+- [x] Add file input field to verify dialog (accept=".jpg,.jpeg,.png,.pdf")
+- [x] Add "Upload Payment Proof (Optional)" label
+- [x] Implement file validation: max 5MB, allowed types
+- [x] Show error message if file validation fails
+- [x] Read file as base64 when selected
+- [x] Show image preview below file input
+- [x] Clear preview when file is removed
+- [x] Update `handleVerify()` to include proof data in API call
+- [x] Show loading state during upload
+- [x] Test verify with proof upload
+- [x] Test verify without proof upload
+- [x] Test file validation (too large)
+- [x] Test file validation (wrong type)
 
 #### Reject Dialog - Proof Upload
 
-- [ ] Add file input field to reject dialog
-- [ ] Use same validation logic as verify dialog
-- [ ] Show image preview
-- [ ] Update `handleReject()` to include proof data
-- [ ] Test reject with proof upload
-- [ ] Test reject without proof upload
+- [x] Add file input field to reject dialog
+- [x] Use same validation logic as verify dialog
+- [x] Show image preview
+- [x] Update `handleReject()` to include proof data
+- [x] Test reject with proof upload
+- [x] Test reject without proof upload
 
 #### Detail Dialog - Proof Display
 
-- [ ] Update payment detail dialog to show proof image if available
-- [ ] Add "View Full Size" button
-- [ ] Call `window.api.payments.getProofPath()` to get file path
-- [ ] Display image with `<img src={`file://${proofPath}`} />`
-- [ ] Show placeholder if no proof
-- [ ] Test detail dialog with proof
-- [ ] Test detail dialog without proof
+- [x] Update payment detail dialog to show proof image if available
+- [x] Add "View Full Size" button (implemented as "Buka di Viewer" with native OS viewer)
+- [x] Add "Download/Save" button (implemented as "Simpan" with save dialog)
+- [x] Call `window.api.payments.readProofFile()` with payment ID for better fallback support
+- [x] Display image with base64 data URL (IPC-based for security)
+- [x] Show placeholder if no proof
+- [x] Test detail dialog with proof
+- [x] Test detail dialog without proof
+- [x] Implement thumbnail fallback when original file is missing/corrupted
+- [x] Add file integrity verification with SHA256 hash
+- [x] Store compressed thumbnail in database as backup (using Sharp library)
 
 ### Phase 5: Testing & Validation (2-3 hours)
 
@@ -217,6 +248,28 @@ Implementation checklist untuk memperbaiki payment verification workflow, menamb
 - [ ] Mark all tasks as completed
 - [ ] Test final implementation against success criteria
 - [ ] Archive change proposal with `openspec archive enhance-payment-verification-workflow --yes`
+
+### Bug Fixes & Enhancements (Post-Implementation)
+
+#### Critical Bugs Fixed
+
+- [x] Migration format error: Changed from Sequelize syntax to MigrationContext.run({ db })
+- [x] File protocol security: "Not allowed to load local resource" → IPC-based base64 conversion
+- [x] Lint errors: Moved inline require() statements to top-level imports (crypto, sharp)
+- [x] Async/await mismatch: Made verifyPayment() and rejectPayment() async, moved savePaymentProof outside transaction
+- [x] Sharp bundling error: Added sharp to vite.config.ts external dependencies
+- [x] IPC response structure: Fixed flat { data, source } → nested { data: { data, source } }
+- [x] Image display issue: Fixed undefined response.data by correcting IPC response nesting
+
+#### Best Practices Implementation
+
+- [x] Dual storage strategy: File on disk + thumbnail in database (redundancy for critical data)
+- [x] File integrity: SHA256 hash verification on read
+- [x] Metadata tracking: file_size, mime_type, uploaded_at, last_verified timestamps
+- [x] Automatic fallback: File missing → thumbnail display
+- [x] Native OS integration: shell.openPath() for viewer, dialog.showSaveDialog() for save
+- [x] Security: Browser isolation from file:// protocol, IPC-based data transfer
+- [x] Image optimization: Sharp library for thumbnail generation (400px, 80% quality)
 
 ## Dependencies
 

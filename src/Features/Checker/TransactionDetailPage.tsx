@@ -80,6 +80,7 @@ export function TransactionDetailPage() {
     null
   );
   const [paymentDetailOpen, setPaymentDetailOpen] = useState(false);
+  const [proofImageData, setProofImageData] = useState<string | null>(null);
 
   const fetchTransaction = useCallback(async () => {
     if (!id) return;
@@ -123,6 +124,31 @@ export function TransactionDetailPage() {
   useEffect(() => {
     fetchTransaction();
   }, [fetchTransaction]);
+
+  // Load proof image when payment is selected
+  useEffect(() => {
+    const loadProofImage = async () => {
+      if (selectedPayment?.proofImagePath) {
+        try {
+          const response = await window.api.payments.readProofFile(
+            selectedPayment.proofImagePath
+          );
+          if (response.success && response.data) {
+            setProofImageData(response.data.data);
+          } else {
+            setProofImageData(null);
+          }
+        } catch (err) {
+          console.error("Failed to load proof image:", err);
+          setProofImageData(null);
+        }
+      } else {
+        setProofImageData(null);
+      }
+    };
+
+    loadProofImage();
+  }, [selectedPayment]);
 
   const handleAddPayment = async (data: {
     method_id: number;
@@ -650,6 +676,47 @@ export function TransactionDetailPage() {
                   </p>
                   <p className="font-medium">{selectedPayment.reference}</p>
                 </div>
+              )}
+
+              {/* Payment Proof Section */}
+              {selectedPayment.proofImagePath && proofImageData ? (
+                <div className="bg-muted rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Bukti Pembayaran
+                  </p>
+                  <div className="space-y-2">
+                    <img
+                      src={proofImageData}
+                      alt="Bukti Pembayaran"
+                      className="w-full rounded border"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        // Open in new window with data URL
+                        const newWindow = window.open();
+                        if (newWindow) {
+                          newWindow.document.write(
+                            `<img src="${proofImageData}" style="max-width:100%;height:auto;" />`
+                          );
+                        }
+                      }}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      Lihat Ukuran Penuh
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                selectedPayment.paymentMethodName !== "CASH" && (
+                  <div className="bg-muted rounded-lg p-4 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Belum ada bukti pembayaran
+                    </p>
+                  </div>
+                )
               )}
 
               {selectedPayment.verificationStatus === "REJECTED" &&

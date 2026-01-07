@@ -227,6 +227,7 @@ export interface PaymentData {
   verificationStatus: PaymentVerificationStatus;
   verifiedAt?: string;
   rejectionReason?: string;
+  proofImagePath?: string;
   transactionInvoiceNumber?: string;
   customerName?: string;
   vehiclePlate?: string;
@@ -269,6 +270,18 @@ export interface DailyStats {
   checkedOut: number;
   totalAmount: number;
   paidAmount: number;
+}
+
+export interface UploadPaymentProofData {
+  paymentId: number;
+  imageData: string; // base64 encoded
+  fileName: string;
+}
+
+export interface UploadPaymentProofResult {
+  success: boolean;
+  filePath?: string;
+  error?: string;
 }
 
 export interface PaymentFilters {
@@ -465,17 +478,42 @@ declare global {
         getById: (paymentId: number) => Promise<ApiResponse<PaymentData>>;
         verify: (
           paymentId: number,
-          notes?: string
+          notes?: string,
+          proofData?: { imageData: string; fileName: string }
         ) => Promise<ApiResponse<PaymentData>>;
         reject: (
           paymentId: number,
           reason: string,
-          notes?: string
+          notes?: string,
+          proofData?: { imageData: string; fileName: string }
         ) => Promise<ApiResponse<PaymentData>>;
         getVerificationStats: (dateRange?: {
           from: string;
           to: string;
         }) => Promise<ApiResponse<PaymentVerificationStats>>;
+        uploadProof: (
+          paymentId: number,
+          imageData: string,
+          fileName: string
+        ) => Promise<ApiResponse<{ filePath: string }>>;
+        getProofPath: (
+          paymentId: number
+        ) => Promise<ApiResponse<{ filePath: string | null }>>;
+        deleteProof: (
+          paymentId: number
+        ) => Promise<ApiResponse<{ deleted: boolean }>>;
+        readProofFile: (
+          paymentIdOrPath: number | string
+        ) => Promise<
+          ApiResponse<{ data: string; source?: "file" | "thumbnail" }>
+        >;
+        openProofWithViewer: (
+          paymentId: number
+        ) => Promise<ApiResponse<Record<string, never>>>;
+        saveProofAs: (
+          paymentId: number,
+          fileName: string
+        ) => Promise<ApiResponse<{ filePath?: string }>>;
       };
     };
   }

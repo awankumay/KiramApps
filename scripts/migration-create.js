@@ -31,7 +31,7 @@ try {
  * Migration: ${migrationName}
  * Created: ${new Date().toISOString().split("T")[0]}
  */
-export async function up({ queryInterface, sequelize }: MigrationContext): Promise<void> {
+export async function up({ db }: MigrationContext): Promise<void> {
   // Add your migration logic here
   // Example:
   // await sequelize.query(\`
@@ -43,7 +43,7 @@ export async function up({ queryInterface, sequelize }: MigrationContext): Promi
   // \`);
 }
 
-export async function down({ queryInterface, sequelize }: MigrationContext): Promise<void> {
+export async function down({ db }: MigrationContext): Promise<void> {
   // Add your rollback logic here
   // Example:
   // await sequelize.query(\`DROP TABLE IF EXISTS example\`);

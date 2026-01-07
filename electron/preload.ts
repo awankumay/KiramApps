@@ -234,11 +234,42 @@ contextBridge.exposeInMainWorld("api", {
     }) => ipcRenderer.invoke("payments:getPending", filters),
     getById: (paymentId: number) =>
       ipcRenderer.invoke("payments:getById", paymentId),
-    verify: (paymentId: number, notes?: string) =>
-      ipcRenderer.invoke("payments:verify", paymentId, notes),
-    reject: (paymentId: number, reason: string, notes?: string) =>
-      ipcRenderer.invoke("payments:reject", paymentId, reason, notes),
+    verify: (
+      paymentId: number,
+      notes?: string,
+      proofData?: { imageData: string; fileName: string }
+    ) => ipcRenderer.invoke("payments:verify", paymentId, notes, proofData),
+    reject: (
+      paymentId: number,
+      reason: string,
+      notes?: string,
+      proofData?: { imageData: string; fileName: string }
+    ) =>
+      ipcRenderer.invoke(
+        "payments:reject",
+        paymentId,
+        reason,
+        notes,
+        proofData
+      ),
     getVerificationStats: (dateRange?: { from: string; to: string }) =>
       ipcRenderer.invoke("payments:getVerificationStats", dateRange),
+    uploadProof: (paymentId: number, imageData: string, fileName: string) =>
+      ipcRenderer.invoke(
+        "payments:uploadProof",
+        paymentId,
+        imageData,
+        fileName
+      ),
+    getProofPath: (paymentId: number) =>
+      ipcRenderer.invoke("payments:getProofPath", paymentId),
+    deleteProof: (paymentId: number) =>
+      ipcRenderer.invoke("payments:deleteProof", paymentId),
+    readProofFile: (paymentIdOrPath: number | string) =>
+      ipcRenderer.invoke("payments:readProofFile", paymentIdOrPath),
+    openProofWithViewer: (paymentId: number) =>
+      ipcRenderer.invoke("payments:openProofWithViewer", paymentId),
+    saveProofAs: (paymentId: number, fileName: string) =>
+      ipcRenderer.invoke("payments:saveProofAs", paymentId, fileName),
   },
 });

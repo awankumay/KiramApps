@@ -17,46 +17,46 @@ function hashPassword(password: string): string {
 
 export async function up({ db }: MigrationContext): Promise<void> {
   // Seed dummy items data
-  db.exec(
-    `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Pasir', 'm³', 150000, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Batu Split', 'm³', 250000, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Batu Kali', 'm³', 200000, 1)`
-  );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Pasir', 'm³', 150000, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Batu Split', 'm³', 250000, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Batu Kali', 'm³', 200000, 1)`
+  // );
 
   // Seed dummy customer data
-  db.exec(
-    `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('PT Logistics Indonesia', 'COMPANY', 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('PT Transport Jaya', 'COMPANY', 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('Budi Santoso', 'PERSONAL', 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('Ahmad Hidayat', 'PERSONAL', 1)`
-  );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('PT Logistics Indonesia', 'COMPANY', 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('PT Transport Jaya', 'COMPANY', 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('Budi Santoso', 'PERSONAL', 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO customers (name, category, is_active) VALUES ('Ahmad Hidayat', 'PERSONAL', 1)`
+  // );
 
   // Seed dummy vehicle data
-  db.exec(
-    `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 1234 ABC', 1, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 5678 XYZ', 1, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 9012 DEF', 2, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 3456 GHI', 3, 1)`
-  );
-  db.exec(
-    `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 7890 JKL', 4, 1)`
-  );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 1234 ABC', 1, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 5678 XYZ', 1, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 9012 DEF', 2, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 3456 GHI', 3, 1)`
+  // );
+  // db.exec(
+  //   `INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active) VALUES ('B 7890 JKL', 4, 1)`
+  // );
 
   // Seed RBAC roles
   db.exec(
@@ -142,49 +142,49 @@ export async function up({ db }: MigrationContext): Promise<void> {
   );
 
   // DummyJSON Users (for API authentication only)
-  const insertDummyUser = db.prepare(
-    `INSERT OR IGNORE INTO users (id, username, email, first_name, last_name, status) VALUES (?, ?, ?, ?, ?, ?)`
-  );
-  insertDummyUser.run(
-    2,
-    "emilys",
-    "emily.johnson@x.dummyjson.com",
-    "Emily",
-    "Johnson",
-    "active"
-  );
-  insertDummyUser.run(
-    3,
-    "michaelw",
-    "michael.williams@x.dummyjson.com",
-    "Michael",
-    "Williams",
-    "active"
-  );
-  insertDummyUser.run(
-    4,
-    "sophiab",
-    "sophia.brown@x.dummyjson.com",
-    "Sophia",
-    "Brown",
-    "active"
-  );
-  insertDummyUser.run(
-    5,
-    "jamesd",
-    "james.davis@x.dummyjson.com",
-    "James",
-    "Davis",
-    "inactive"
-  );
-  insertDummyUser.run(
-    6,
-    "emmaw",
-    "emma.wilson@x.dummyjson.com",
-    "Emma",
-    "Wilson",
-    "active"
-  );
+  // const insertDummyUser = db.prepare(
+  //   `INSERT OR IGNORE INTO users (id, username, email, first_name, last_name, status) VALUES (?, ?, ?, ?, ?, ?)`
+  // );
+  // insertDummyUser.run(
+  //   2,
+  //   "emilys",
+  //   "emily.johnson@x.dummyjson.com",
+  //   "Emily",
+  //   "Johnson",
+  //   "active"
+  // );
+  // insertDummyUser.run(
+  //   3,
+  //   "michaelw",
+  //   "michael.williams@x.dummyjson.com",
+  //   "Michael",
+  //   "Williams",
+  //   "active"
+  // );
+  // insertDummyUser.run(
+  //   4,
+  //   "sophiab",
+  //   "sophia.brown@x.dummyjson.com",
+  //   "Sophia",
+  //   "Brown",
+  //   "active"
+  // );
+  // insertDummyUser.run(
+  //   5,
+  //   "jamesd",
+  //   "james.davis@x.dummyjson.com",
+  //   "James",
+  //   "Davis",
+  //   "inactive"
+  // );
+  // insertDummyUser.run(
+  //   6,
+  //   "emmaw",
+  //   "emma.wilson@x.dummyjson.com",
+  //   "Emma",
+  //   "Wilson",
+  //   "active"
+  // );
 
   // Seed role-permission mappings
   // SUPERADMIN gets all permissions

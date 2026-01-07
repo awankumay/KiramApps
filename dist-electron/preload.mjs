@@ -112,8 +112,25 @@ electron.contextBridge.exposeInMainWorld("api", {
   payments: {
     getPending: (filters) => electron.ipcRenderer.invoke("payments:getPending", filters),
     getById: (paymentId) => electron.ipcRenderer.invoke("payments:getById", paymentId),
-    verify: (paymentId, notes) => electron.ipcRenderer.invoke("payments:verify", paymentId, notes),
-    reject: (paymentId, reason, notes) => electron.ipcRenderer.invoke("payments:reject", paymentId, reason, notes),
-    getVerificationStats: (dateRange) => electron.ipcRenderer.invoke("payments:getVerificationStats", dateRange)
+    verify: (paymentId, notes, proofData) => electron.ipcRenderer.invoke("payments:verify", paymentId, notes, proofData),
+    reject: (paymentId, reason, notes, proofData) => electron.ipcRenderer.invoke(
+      "payments:reject",
+      paymentId,
+      reason,
+      notes,
+      proofData
+    ),
+    getVerificationStats: (dateRange) => electron.ipcRenderer.invoke("payments:getVerificationStats", dateRange),
+    uploadProof: (paymentId, imageData, fileName) => electron.ipcRenderer.invoke(
+      "payments:uploadProof",
+      paymentId,
+      imageData,
+      fileName
+    ),
+    getProofPath: (paymentId) => electron.ipcRenderer.invoke("payments:getProofPath", paymentId),
+    deleteProof: (paymentId) => electron.ipcRenderer.invoke("payments:deleteProof", paymentId),
+    readProofFile: (paymentIdOrPath) => electron.ipcRenderer.invoke("payments:readProofFile", paymentIdOrPath),
+    openProofWithViewer: (paymentId) => electron.ipcRenderer.invoke("payments:openProofWithViewer", paymentId),
+    saveProofAs: (paymentId, fileName) => electron.ipcRenderer.invoke("payments:saveProofAs", paymentId, fileName)
   }
 });

@@ -47,15 +47,15 @@
 
 ### Phase 6: Testing
 
-- [ ] Test create item dengan semua satuan options
-- [ ] Test update item dan verify price history tercatat
-- [ ] Test delete item
-- [ ] Test toggle status
-- [ ] Test search functionality
-- [ ] Test permission access control
-- [ ] Test price history dialog
-- [ ] Verify dummy data ter-seed dengan benar
-- [ ] Test migration untuk existing database
+- [x] Test create item dengan semua satuan options
+- [x] Test update item dan verify price history tercatat
+- [x] Test delete item
+- [x] Test toggle status
+- [x] Test search functionality
+- [x] Test permission access control
+- [x] Test price history dialog
+- [x] Verify dummy data ter-seed dengan benar
+- [x] Test migration untuk existing database
 
 ## Dependencies
 
