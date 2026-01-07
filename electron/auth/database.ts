@@ -119,6 +119,207 @@ export function initAuthDatabase(db: DatabaseInstance): void {
 
   // Initialize RBAC schema
   initRBACDatabase(db);
+
+  // Initialize Items schema
+  initItemsDatabase(db);
+
+  // Initialize Customer & Vehicle schema
+  initCustomerVehicleDatabase(db);
+}
+
+/**
+ * Initialize Items database schema
+ * Creates items table for item management
+ */
+export function initItemsDatabase(db: DatabaseInstance): void {
+  // Create items table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      unit TEXT NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Migration: Add price column if it doesn't exist (for existing databases)
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(items)").all() as Array<{
+      name: string;
+    }>;
+    const hasPriceColumn = tableInfo.some((col) => col.name === "price");
+    if (!hasPriceColumn) {
+      db.exec(`ALTER TABLE items ADD COLUMN price REAL NOT NULL DEFAULT 0;`);
+      console.log("Migration: Added price column to items table");
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  // Create price history table for tracking price changes
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS item_price_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL,
+      old_price REAL,
+      new_price REAL NOT NULL,
+      changed_by INTEGER,
+      changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Create indexes for items table
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_items_name
+    ON items(name);
+    
+    CREATE INDEX IF NOT EXISTS idx_items_is_active
+    ON items(is_active);
+  `);
+
+  // Create indexes for price history table
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_price_history_item_id
+    ON item_price_history(item_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_price_history_changed_at
+    ON item_price_history(changed_at);
+  `);
+
+  // Seed dummy items
+  seedItemsData(db);
+
+  console.log("Items database schema initialized");
+}
+
+/**
+ * Initialize Customer & Vehicle database schema
+ * Creates customers and vehicles tables for customer and vehicle management
+ */
+export function initCustomerVehicleDatabase(db: DatabaseInstance): void {
+  // Create customers table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('PERSONAL', 'COMPANY')),
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create vehicles table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vehicles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plate_number TEXT NOT NULL UNIQUE,
+      customer_id INTEGER NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create indexes for customers table
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_customers_name
+    ON customers(name);
+    
+    CREATE INDEX IF NOT EXISTS idx_customers_category
+    ON customers(category);
+    
+    CREATE INDEX IF NOT EXISTS idx_customers_is_active
+    ON customers(is_active);
+  `);
+
+  // Create indexes for vehicles table
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_vehicles_plate_number
+    ON vehicles(plate_number);
+    
+    CREATE INDEX IF NOT EXISTS idx_vehicles_customer_id
+    ON vehicles(customer_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_vehicles_is_active
+    ON vehicles(is_active);
+  `);
+
+  // Seed dummy customer and vehicle data
+  seedCustomerVehicleData(db);
+
+  console.log("Customer & Vehicle database schema initialized");
+}
+
+/**
+ * Seed dummy customer and vehicle data
+ */
+function seedCustomerVehicleData(db: DatabaseInstance): void {
+  const dummyCustomers = [
+    { name: "PT Logistics Indonesia", category: "COMPANY" },
+    { name: "PT Transport Jaya", category: "COMPANY" },
+    { name: "Budi Santoso", category: "PERSONAL" },
+    { name: "Ahmad Hidayat", category: "PERSONAL" },
+  ];
+
+  const dummyVehicles = [
+    { plateNumber: "B 1234 ABC", customerIndex: 0 },
+    { plateNumber: "B 5678 XYZ", customerIndex: 0 },
+    { plateNumber: "B 9012 DEF", customerIndex: 1 },
+    { plateNumber: "B 3456 GHI", customerIndex: 2 },
+    { plateNumber: "B 7890 JKL", customerIndex: 3 },
+  ];
+
+  // Insert customers
+  const insertCustomer = db.prepare(`
+    INSERT OR IGNORE INTO customers (name, category, is_active)
+    VALUES (?, ?, 1)
+  `);
+
+  const customerIds: number[] = [];
+  for (const customer of dummyCustomers) {
+    const result = insertCustomer.run(customer.name, customer.category);
+    customerIds.push(result.lastInsertRowid as number);
+  }
+
+  // Insert vehicles
+  const insertVehicle = db.prepare(`
+    INSERT OR IGNORE INTO vehicles (plate_number, customer_id, is_active)
+    VALUES (?, ?, 1)
+  `);
+
+  for (const vehicle of dummyVehicles) {
+    const customerId = customerIds[vehicle.customerIndex];
+    if (customerId) {
+      insertVehicle.run(vehicle.plateNumber, customerId);
+    }
+  }
+
+  console.log("Dummy customer and vehicle data seeded");
+}
+
+/**
+ * Seed dummy items data
+ */
+function seedItemsData(db: DatabaseInstance): void {
+  const dummyItems = [
+    { name: "Pasir", unit: "m³", price: 150000 },
+    { name: "Batu Split", unit: "m³", price: 250000 },
+    { name: "Batu Kali", unit: "m³", price: 200000 },
+  ];
+
+  const insertItem = db.prepare(`
+    INSERT OR IGNORE INTO items (name, unit, price, is_active)
+    VALUES (?, ?, ?, 1)
+  `);
+
+  for (const item of dummyItems) {
+    insertItem.run(item.name, item.unit, item.price);
+  }
+
+  console.log("Dummy items data seeded");
 }
 
 /**
@@ -255,6 +456,11 @@ function seedRBACData(db: DatabaseInstance): void {
       code: "MANAGE_ROLES",
       name: "Manage Roles",
       description: "Manage roles and permissions",
+    },
+    {
+      code: "MANAGE_ITEMS",
+      name: "Manage Items",
+      description: "Create, edit, delete items",
     },
     {
       code: "VIEW_REPORTS",
@@ -432,8 +638,9 @@ export function createDatabase(): DatabaseInstance {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
 
-  // Initialize auth schema
-  initAuthDatabase(db);
+  // Note: Migrations are now handled by Sequelize+Umzug
+  // Run `npm run db:migrate` to apply migrations
+  // The schema should already be created by the migration system
 
   console.log("Database initialized successfully");
 

@@ -68,12 +68,6 @@ export function LoginForm({
         <Field>
           <div className="flex items-center">
             <FieldLabel htmlFor="password">Password</FieldLabel>
-            <a
-              href="#"
-              className="ml-auto text-sm underline-offset-4 hover:underline"
-            >
-              Forgot your password?
-            </a>
           </div>
           <Input
             id="password"
@@ -90,10 +84,6 @@ export function LoginForm({
             {isLoading ? "Logging in..." : "Login"}
           </Button>
         </Field>
-      </FieldGroup>
-      <FieldGroup>
-        <Field>Username Example : emilys</Field>
-        <Field>Password Example : emilyspass</Field>
       </FieldGroup>
     </form>
   );

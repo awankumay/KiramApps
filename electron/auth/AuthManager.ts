@@ -3,6 +3,10 @@ import { AuditLogger } from "./AuditLogger";
 import { DummyJSONClient } from "./DummyJSONClient";
 import { NetworkStatus } from "./NetworkStatus";
 import { RBACManager } from "./RBACManager";
+import { ItemsManager } from "./ItemsManager";
+import { CustomerManager } from "./CustomerManager";
+import { VehicleManager } from "./VehicleManager";
+import { TransactionManager } from "./TransactionManager";
 import { createRequire } from "module";
 import { createHash } from "crypto";
 
@@ -40,6 +44,10 @@ export class AuthManager {
   private apiClient: DummyJSONClient;
   private networkStatus: NetworkStatus;
   private rbacManager: RBACManager;
+  private itemsManager: ItemsManager;
+  private customerManager: CustomerManager;
+  private vehicleManager: VehicleManager;
+  private transactionManager: TransactionManager;
   private db: DatabaseInstance;
 
   constructor(db: DatabaseInstance) {
@@ -49,6 +57,31 @@ export class AuthManager {
     this.apiClient = new DummyJSONClient();
     this.networkStatus = new NetworkStatus();
     this.rbacManager = new RBACManager(db);
+    this.itemsManager = new ItemsManager(db);
+    this.customerManager = new CustomerManager(db);
+    this.vehicleManager = new VehicleManager(db);
+    this.transactionManager = new TransactionManager(db);
+  }
+
+  /**
+   * Get Items manager for item management
+   */
+  getItemsManager(): ItemsManager {
+    return this.itemsManager;
+  }
+
+  /**
+   * Get Customer manager for customer management
+   */
+  getCustomerManager(): CustomerManager {
+    return this.customerManager;
+  }
+
+  /**
+   * Get Vehicle manager for vehicle management
+   */
+  getVehicleManager(): VehicleManager {
+    return this.vehicleManager;
   }
 
   /**
@@ -56,6 +89,13 @@ export class AuthManager {
    */
   getRBACManager(): RBACManager {
     return this.rbacManager;
+  }
+
+  /**
+   * Get Transaction manager for transaction management
+   */
+  getTransactionManager(): TransactionManager {
+    return this.transactionManager;
   }
 
   /**

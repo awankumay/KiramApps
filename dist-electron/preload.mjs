@@ -47,5 +47,73 @@ electron.contextBridge.exposeInMainWorld("api", {
     update: (userId, userData) => electron.ipcRenderer.invoke("users:update", userId, userData),
     delete: (userId) => electron.ipcRenderer.invoke("users:delete", userId),
     toggleStatus: (userId) => electron.ipcRenderer.invoke("users:toggleStatus", userId)
+  },
+  items: {
+    getAll: () => electron.ipcRenderer.invoke("items:getAll"),
+    getById: (itemId) => electron.ipcRenderer.invoke("items:getById", itemId),
+    create: (itemData) => electron.ipcRenderer.invoke("items:create", itemData),
+    update: (itemId, itemData, userId) => electron.ipcRenderer.invoke("items:update", itemId, itemData, userId),
+    delete: (itemId) => electron.ipcRenderer.invoke("items:delete", itemId),
+    toggleStatus: (itemId) => electron.ipcRenderer.invoke("items:toggleStatus", itemId),
+    search: (query) => electron.ipcRenderer.invoke("items:search", query),
+    getActive: () => electron.ipcRenderer.invoke("items:getActive"),
+    getPriceHistory: (itemId) => electron.ipcRenderer.invoke("items:getPriceHistory", itemId)
+  },
+  customers: {
+    getAll: (filters) => electron.ipcRenderer.invoke("customers:getAll", filters || {}),
+    getById: (customerId) => electron.ipcRenderer.invoke("customers:getById", customerId),
+    create: (customerData) => electron.ipcRenderer.invoke("customers:create", customerData),
+    update: (customerId, customerData) => electron.ipcRenderer.invoke("customers:update", customerId, customerData),
+    delete: (customerId) => electron.ipcRenderer.invoke("customers:delete", customerId),
+    search: (query) => electron.ipcRenderer.invoke("customers:search", query),
+    getActive: () => electron.ipcRenderer.invoke("customers:getActive")
+  },
+  vehicles: {
+    getAll: (filters) => electron.ipcRenderer.invoke("vehicles:getAll", filters || {}),
+    getById: (vehicleId) => electron.ipcRenderer.invoke("vehicles:getById", vehicleId),
+    create: (vehicleData) => electron.ipcRenderer.invoke("vehicles:create", vehicleData),
+    update: (vehicleId, vehicleData) => electron.ipcRenderer.invoke("vehicles:update", vehicleId, vehicleData),
+    delete: (vehicleId) => electron.ipcRenderer.invoke("vehicles:delete", vehicleId),
+    search: (query) => electron.ipcRenderer.invoke("vehicles:search", query),
+    getByCustomerId: (customerId) => electron.ipcRenderer.invoke("vehicles:getByCustomerId", customerId),
+    getActive: () => electron.ipcRenderer.invoke("vehicles:getActive"),
+    plateNumberExists: (plateNumber, excludeId) => electron.ipcRenderer.invoke("vehicles:plateNumberExists", plateNumber, excludeId)
+  },
+  transactions: {
+    getAll: (filters) => electron.ipcRenderer.invoke("transactions:getAll", filters || {}),
+    getById: (transactionId) => electron.ipcRenderer.invoke("transactions:getById", transactionId),
+    create: (transactionData, userId) => electron.ipcRenderer.invoke("transactions:create", transactionData, userId),
+    update: (transactionId, transactionData) => electron.ipcRenderer.invoke("transactions:update", transactionId, transactionData),
+    delete: (transactionId) => electron.ipcRenderer.invoke("transactions:delete", transactionId),
+    search: (query) => electron.ipcRenderer.invoke("transactions:search", query),
+    updateStatus: (transactionId, newStatus, userId, note) => electron.ipcRenderer.invoke(
+      "transactions:updateStatus",
+      transactionId,
+      newStatus,
+      userId,
+      note
+    ),
+    getStatusHistory: (transactionId) => electron.ipcRenderer.invoke("transactions:getStatusHistory", transactionId),
+    addPayment: (transactionId, paymentData, verifiedBy) => electron.ipcRenderer.invoke(
+      "transactions:addPayment",
+      transactionId,
+      paymentData,
+      verifiedBy
+    ),
+    getPayments: (transactionId) => electron.ipcRenderer.invoke("transactions:getPayments", transactionId),
+    getDailyStats: (date) => electron.ipcRenderer.invoke("transactions:getDailyStats", date)
+  },
+  transactionTypes: {
+    getAll: () => electron.ipcRenderer.invoke("transactionTypes:getAll")
+  },
+  paymentMethods: {
+    getAll: () => electron.ipcRenderer.invoke("paymentMethods:getAll")
+  },
+  payments: {
+    getPending: (filters) => electron.ipcRenderer.invoke("payments:getPending", filters),
+    getById: (paymentId) => electron.ipcRenderer.invoke("payments:getById", paymentId),
+    verify: (paymentId, notes) => electron.ipcRenderer.invoke("payments:verify", paymentId, notes),
+    reject: (paymentId, reason, notes) => electron.ipcRenderer.invoke("payments:reject", paymentId, reason, notes),
+    getVerificationStats: (dateRange) => electron.ipcRenderer.invoke("payments:getVerificationStats", dateRange)
   }
 });

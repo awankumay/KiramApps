@@ -7,7 +7,16 @@
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "npm rebuild better-sqlite3",
+    "db:reset": "node scripts/db-reset.js",
+    "db:fresh": "npm run rebuild:node && npm run db:reset && npm run migration:compile && npm run migration:run && npm run rebuild",
+    "db:migrate": "npm run rebuild:node && npm run migration:compile && npm run migration:run && npm run rebuild",
+    "migration:compile": "tsc -p tsconfig.migrations.json",
+    "migration:create": "node scripts/migration-create.js",
+    "migration:status": "npm run rebuild:node && npm run migration:compile && node scripts/migration-status.js",
+    "migration:run": "node scripts/migration-run.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -42,6 +51,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
+    "umzug": "^3.8.2",
     "vaul": "^1.1.2",
     "zod": "^4.3.4"
   },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FilePlus, Save, Plus, Trash } from "lucide-react";
 import { Button } from "@Shared/Components/UI/Button";
 import { Input } from "@Shared/Components/UI/Input";
@@ -18,28 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@Shared/Components/UI/Select";
+import { CustomerCombobox } from "./Components/CustomerCombobox";
+import { VehicleCombobox } from "./Components/VehicleCombobox";
+import type {
+  CreateTransactionData,
+  TransactionTypeData,
+  ItemData,
+  PaymentMethodData,
+} from "@Shared/Types/Electron";
 
-// Mock data
-const mockCustomers = [
-  { id: 1, name: "PT. Sumber Makmur" },
-  { id: 2, name: "CV. Karya Jaya" },
-  { id: 3, name: "UD. Mitra Sejahtera" },
-  { id: 4, name: "PT. Bangun Persada" },
-];
-
-const mockVehicles = [
-  { id: 1, plate: "B 1234 ABC" },
-  { id: 2, plate: "D 5678 XYZ" },
-  { id: 3, plate: "F 9012 DEF" },
-];
-
-const mockItems = [
-  { id: 1, name: "Pasir", price: 150000 },
-  { id: 2, name: "Batu Split", price: 250000 },
-  { id: 3, name: "Batu Kali", price: 200000 },
-];
-
-interface TransactionItem {
+interface TransactionFormItem {
   id: number;
   itemId: string;
   itemName: string;
@@ -49,12 +37,71 @@ interface TransactionItem {
 }
 
 export function CreateTransactionPage() {
-  const [customer, setCustomer] = useState("");
-  const [vehicle, setVehicle] = useState("");
+  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [vehicleId, setVehicleId] = useState<number | null>(null);
+  const [transactionTypeId, setTransactionTypeId] = useState<number>(1);
+  const [paymentMethodId, setPaymentMethodId] = useState<number>(1); // Default CASH
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<TransactionItem[]>([
-    { id: 1, itemId: "", itemName: "", quantity: 1, price: 0, subtotal: 0 },
+  const [items, setItems] = useState<TransactionFormItem[]>([
+    {
+      id: Date.now(),
+      itemId: "",
+      itemName: "",
+      quantity: 1,
+      price: 0,
+      subtotal: 0,
+    },
   ]);
+  const [availableItems, setAvailableItems] = useState<ItemData[]>([]);
+  const [transactionTypes, setTransactionTypes] = useState<
+    TransactionTypeData[]
+  >([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodData[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchTransactionTypes = useCallback(async () => {
+    try {
+      const result = await window.api.transactionTypes.getAll();
+      if (result.success && result.data) {
+        setTransactionTypes(result.data);
+      }
+    } catch (error) {
+      console.error("Error fetching transaction types:", error);
+    }
+  }, []);
+
+  const fetchActiveItems = useCallback(async () => {
+    try {
+      const result = await window.api.items.getActive();
+      if (result.success && result.data) {
+        setAvailableItems(result.data);
+      }
+    } catch (error) {
+      console.error("Error fetching items:", error);
+    }
+  }, []);
+
+  const fetchPaymentMethods = useCallback(async () => {
+    try {
+      const result = await window.api.paymentMethods.getAll();
+      if (result.success && result.data) {
+        setPaymentMethods(result.data);
+      }
+    } catch (error) {
+      console.error("Error fetching payment methods:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTransactionTypes();
+    fetchActiveItems();
+    fetchPaymentMethods();
+  }, [fetchTransactionTypes, fetchActiveItems, fetchPaymentMethods]);
+
+  // Reset vehicle when customer changes
+  useEffect(() => {
+    setVehicleId(null);
+  }, [customerId]);
 
   const addItem = () => {
     setItems([
@@ -85,15 +132,19 @@ export function CreateTransactionPage() {
 
         // Auto-fill price and name when item is selected
         if (field === "itemId") {
-          const selectedItem = mockItems.find((i) => i.id === Number(value));
+          const selectedItem = availableItems.find(
+            (i) => i.id === Number(value)
+          );
           if (selectedItem) {
             updated.itemName = selectedItem.name;
             updated.price = selectedItem.price;
           }
         }
 
-        // Calculate subtotal
-        updated.subtotal = updated.quantity * updated.price;
+        // Calculate subtotal - always recalculate when itemId, quantity, or price changes
+        if (field === "itemId" || field === "quantity" || field === "price") {
+          updated.subtotal = updated.quantity * (updated.price || 0);
+        }
 
         return updated;
       })
@@ -102,9 +153,61 @@ export function CreateTransactionPage() {
 
   const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
-  const handleSubmit = () => {
-    // Mock submit
-    alert("Transaksi berhasil disimpan (mock)");
+  const handleSubmit = async () => {
+    // Validation
+    if (!customerId) {
+      alert("Silakan pilih customer");
+      return;
+    }
+
+    if (!vehicleId) {
+      alert("Silakan pilih kendaraan");
+      return;
+    }
+
+    if (items.some((item) => !item.itemId)) {
+      alert("Silakan pilih item untuk semua baris");
+      return;
+    }
+
+    if (items.some((item) => item.quantity <= 0)) {
+      alert("Qty harus lebih dari 0");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const transactionData: CreateTransactionData = {
+        transactionTypeId,
+        customerId,
+        vehicleId,
+        items: items.map((item) => ({
+          itemId: Number(item.itemId),
+          qty: item.quantity,
+          price: item.price,
+        })),
+        paymentMethodId, // Pass payment method - CASH (id=1) will auto-set to PAID
+        notes: notes || undefined,
+      };
+
+      const result = await window.api.transactions.create(
+        transactionData,
+        1 // TODO: Get user ID from auth context
+      );
+
+      if (result.success && result.data) {
+        alert("Transaksi berhasil dibuat!");
+        window.location.hash = "/checker/transactions";
+      } else {
+        alert("Gagal membuat transaksi: " + (result.error || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Error creating transaction:", error);
+      alert("Terjadi kesalahan saat membuat transaksi");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -128,37 +231,40 @@ export function CreateTransactionPage() {
               <CardDescription>Pilih customer dan kendaraan</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Customer</Label>
-                  <Select value={customer} onValueChange={setCustomer}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockCustomers.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Kendaraan</Label>
-                  <Select value={vehicle} onValueChange={setVehicle}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kendaraan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockVehicles.map((v) => (
-                        <SelectItem key={v.id} value={String(v.id)}>
-                          {v.plate}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-2">
+                <Label>Tipe Transaksi</Label>
+                <Select
+                  value={String(transactionTypeId)}
+                  onValueChange={(v) => setTransactionTypeId(Number(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih tipe transaksi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {transactionTypes.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Customer</Label>
+                <CustomerCombobox
+                  value={customerId}
+                  onChange={(customer) => setCustomerId(customer.id)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Kendaraan</Label>
+                <VehicleCombobox
+                  value={vehicleId}
+                  customerId={customerId}
+                  onChange={(vehicle) => setVehicleId(vehicle.id)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -187,25 +293,27 @@ export function CreateTransactionPage() {
                         <SelectValue placeholder="Pilih item" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mockItems.map((i) => (
+                        {availableItems.map((i) => (
                           <SelectItem key={i.id} value={String(i.id)}>
-                            {i.name} - Rp {i.price.toLocaleString()}/m³
+                            {i.name} - Rp {(i.price || 0).toLocaleString()}/m³
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div className="space-y-2">
                     <Label>Qty (m³)</Label>
                     <Input
                       type="number"
                       min="1"
-                      value={item.quantity}
+                      value={String(item.quantity)}
                       onChange={(e) =>
                         updateItem(item.id, "quantity", Number(e.target.value))
                       }
                     />
                   </div>
+
                   <div className="space-y-2">
                     <Label>Subtotal</Label>
                     <Input
@@ -214,6 +322,7 @@ export function CreateTransactionPage() {
                       className="bg-muted"
                     />
                   </div>
+
                   <div>
                     <Button
                       variant="outline"
@@ -226,6 +335,7 @@ export function CreateTransactionPage() {
                   </div>
                 </div>
               ))}
+
               <Button variant="outline" onClick={addItem}>
                 <Plus className="h-4 w-4 mr-2" />
                 Tambah Item
@@ -237,10 +347,11 @@ export function CreateTransactionPage() {
           <Card>
             <CardHeader>
               <CardTitle>Catatan</CardTitle>
+              <CardDescription>Catatan tambahan (opsional)</CardDescription>
             </CardHeader>
             <CardContent>
               <Textarea
-                placeholder="Catatan tambahan (opsional)"
+                placeholder="Catatan tambahan (opsional)..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
@@ -273,9 +384,34 @@ export function CreateTransactionPage() {
                   <span>Rp {total.toLocaleString()}</span>
                 </div>
               </div>
-              <Button className="w-full" onClick={handleSubmit}>
+
+              {/* Payment Method Selection */}
+              <div className="space-y-2">
+                <Label>Metode Pembayaran</Label>
+                <Select
+                  value={String(paymentMethodId)}
+                  onValueChange={(v) => setPaymentMethodId(Number(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih metode pembayaran" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentMethods.map((method) => (
+                      <SelectItem key={method.id} value={String(method.id)}>
+                        {method.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
                 <Save className="h-4 w-4 mr-2" />
-                Simpan Transaksi
+                {submitting ? "Menyimpan..." : "Simpan Transaksi"}
               </Button>
             </CardContent>
           </Card>

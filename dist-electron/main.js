@@ -11,328 +11,6 @@ import { EventEmitter } from "events";
 import { createHash } from "crypto";
 const require$5 = createRequire(import.meta.url);
 const BetterSqlite3 = require$5("better-sqlite3");
-function initAuthDatabase(db) {
-  try {
-    const tableInfo = db.pragma("table_info(auth_sessions)");
-    if (tableInfo && tableInfo.length > 0) {
-      console.log("Dropping existing auth_sessions table for schema migration");
-      db.exec("DROP TABLE IF EXISTS auth_sessions");
-    }
-  } catch (error) {
-  }
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS auth_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      username TEXT NOT NULL,
-      email TEXT,
-      first_name TEXT,
-      last_name TEXT,
-      access_token_encrypted BLOB NOT NULL,
-      refresh_token_encrypted BLOB NOT NULL,
-      token_expiry DATETIME NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_refreshed_at DATETIME,
-      is_active INTEGER DEFAULT 1
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS auth_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
-      user_id INTEGER,
-      username TEXT,
-      success INTEGER NOT NULL,
-      error_message TEXT,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id 
-    ON auth_sessions(user_id);
-    
-    CREATE INDEX IF NOT EXISTS idx_auth_sessions_is_active 
-    ON auth_sessions(is_active);
-    
-    CREATE INDEX IF NOT EXISTS idx_auth_events_user_id 
-    ON auth_events(user_id);
-    
-    CREATE INDEX IF NOT EXISTS idx_auth_events_created_at 
-    ON auth_events(created_at);
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT,
-      first_name TEXT NOT NULL,
-      last_name TEXT NOT NULL,
-      status TEXT DEFAULT 'active',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-    const hasPasswordHash = tableInfo.some(
-      (col) => col.name === "password_hash"
-    );
-    if (!hasPasswordHash) {
-      db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT;`);
-      console.log("Migration: Added password_hash column to users table");
-    }
-  } catch (error) {
-    console.error("Migration error:", error);
-  }
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_users_username 
-    ON users(username);
-    
-    CREATE INDEX IF NOT EXISTS idx_users_email 
-    ON users(email);
-    
-    CREATE INDEX IF NOT EXISTS idx_users_status 
-    ON users(status);
-  `);
-  initRBACDatabase(db);
-}
-function initRBACDatabase(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS roles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS permissions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS role_permissions (
-      role_id INTEGER NOT NULL,
-      permission_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (role_id, permission_id),
-      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-      FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS user_roles (
-      user_id INTEGER NOT NULL,
-      role_id INTEGER NOT NULL,
-      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, role_id),
-      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
-    );
-  `);
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id 
-    ON role_permissions(role_id);
-    
-    CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id 
-    ON role_permissions(permission_id);
-    
-    CREATE INDEX IF NOT EXISTS idx_user_roles_user_id 
-    ON user_roles(user_id);
-    
-    CREATE INDEX IF NOT EXISTS idx_user_roles_role_id 
-    ON user_roles(role_id);
-  `);
-  seedRBACData(db);
-}
-function seedRBACData(db) {
-  const roles = [
-    {
-      code: "SUPERADMIN",
-      name: "Super Administrator",
-      description: "Full system access"
-    },
-    {
-      code: "CHECKER",
-      name: "Checker",
-      description: "Transaction input and verification"
-    },
-    {
-      code: "LOADER",
-      name: "Operator Loader",
-      description: "Loader operation only"
-    }
-  ];
-  const permissions = [
-    {
-      code: "VIEW_DASHBOARD",
-      name: "View Dashboard",
-      description: "Access dashboard"
-    },
-    {
-      code: "CREATE_TRANSACTION",
-      name: "Create Transaction",
-      description: "Create new transactions"
-    },
-    {
-      code: "VIEW_TRANSACTION",
-      name: "View Transaction",
-      description: "View transaction details"
-    },
-    {
-      code: "VERIFY_PAYMENT",
-      name: "Verify Payment",
-      description: "Verify payment submissions"
-    },
-    {
-      code: "VIEW_LOADER_QUEUE",
-      name: "View Loader Queue",
-      description: "View loader assignment queue"
-    },
-    {
-      code: "UPDATE_LOADER_STATUS",
-      name: "Update Loader Status",
-      description: "Update loader assignment status"
-    },
-    {
-      code: "MANAGE_USERS",
-      name: "Manage Users",
-      description: "Create, edit, delete users"
-    },
-    {
-      code: "MANAGE_ROLES",
-      name: "Manage Roles",
-      description: "Manage roles and permissions"
-    },
-    {
-      code: "VIEW_REPORTS",
-      name: "View Reports",
-      description: "Access system reports"
-    }
-  ];
-  const rolePermissions = {
-    SUPERADMIN: permissions.map((p) => p.code),
-    // All permissions
-    CHECKER: [
-      "VIEW_DASHBOARD",
-      "CREATE_TRANSACTION",
-      "VIEW_TRANSACTION",
-      "VERIFY_PAYMENT"
-    ],
-    LOADER: ["VIEW_DASHBOARD", "VIEW_LOADER_QUEUE", "UPDATE_LOADER_STATUS"]
-  };
-  const userRoles = [
-    { userId: 1, roleCode: "SUPERADMIN" },
-    // emilys
-    { userId: 2, roleCode: "CHECKER" },
-    // michaelw
-    { userId: 3, roleCode: "LOADER" }
-    // sophiab
-  ];
-  const insertRole = db.prepare(`
-    INSERT OR IGNORE INTO roles (code, name, description) VALUES (?, ?, ?)
-  `);
-  for (const role of roles) {
-    insertRole.run(role.code, role.name, role.description);
-  }
-  const insertPermission = db.prepare(`
-    INSERT OR IGNORE INTO permissions (code, name, description) VALUES (?, ?, ?)
-  `);
-  for (const permission of permissions) {
-    insertPermission.run(
-      permission.code,
-      permission.name,
-      permission.description
-    );
-  }
-  const getRoleId = db.prepare(`SELECT id FROM roles WHERE code = ?`);
-  const getPermissionId = db.prepare(
-    `SELECT id FROM permissions WHERE code = ?`
-  );
-  const insertRolePermission = db.prepare(`
-    INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)
-  `);
-  for (const [roleCode, permissionCodes] of Object.entries(rolePermissions)) {
-    const roleRow = getRoleId.get(roleCode);
-    if (!roleRow) continue;
-    for (const permCode of permissionCodes) {
-      const permRow = getPermissionId.get(permCode);
-      if (!permRow) continue;
-      insertRolePermission.run(roleRow.id, permRow.id);
-    }
-  }
-  const insertUserRole = db.prepare(`
-    INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)
-  `);
-  for (const { userId, roleCode } of userRoles) {
-    const roleRow = getRoleId.get(roleCode);
-    if (!roleRow) continue;
-    insertUserRole.run(userId, roleRow.id);
-  }
-  const testUsers = [
-    {
-      id: 1,
-      username: "emilys",
-      email: "emily.johnson@x.dummyjson.com",
-      firstName: "Emily",
-      lastName: "Johnson",
-      status: "active"
-    },
-    {
-      id: 2,
-      username: "michaelw",
-      email: "michael.williams@x.dummyjson.com",
-      firstName: "Michael",
-      lastName: "Williams",
-      status: "active"
-    },
-    {
-      id: 3,
-      username: "sophiab",
-      email: "sophia.brown@x.dummyjson.com",
-      firstName: "Sophia",
-      lastName: "Brown",
-      status: "active"
-    },
-    {
-      id: 4,
-      username: "jamesd",
-      email: "james.davis@x.dummyjson.com",
-      firstName: "James",
-      lastName: "Davis",
-      status: "inactive"
-    },
-    {
-      id: 5,
-      username: "emmaw",
-      email: "emma.wilson@x.dummyjson.com",
-      firstName: "Emma",
-      lastName: "Wilson",
-      status: "active"
-    }
-  ];
-  const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (id, username, email, first_name, last_name, status) VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  for (const user of testUsers) {
-    insertUser.run(
-      user.id,
-      user.username,
-      user.email,
-      user.firstName,
-      user.lastName,
-      user.status
-    );
-  }
-  console.log("RBAC data seeded successfully");
-}
 function getDatabasePath() {
   const userDataPath = app.getPath("userData");
   return path.join(userDataPath, "app-data.db");
@@ -350,7 +28,6 @@ function createDatabase() {
   const db = new BetterSqlite3(dbPath);
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
-  initAuthDatabase(db);
   console.log("Database initialized successfully");
   return db;
 }
@@ -437,13 +114,13 @@ class TokenStorage {
         id: row.id,
         userId: row.userId,
         username: row.username,
-        email: row.email,
-        firstName: row.firstName,
-        lastName: row.lastName,
+        email: row.email ?? void 0,
+        firstName: row.firstName ?? void 0,
+        lastName: row.lastName ?? void 0,
         tokenExpiry: row.tokenExpiry,
         isActive: Boolean(row.isActive),
         createdAt: row.createdAt,
-        lastRefreshedAt: row.lastRefreshedAt,
+        lastRefreshedAt: row.lastRefreshedAt ?? void 0,
         accessToken,
         refreshToken
       };
@@ -597,12 +274,12 @@ class AuditLogger {
       return rows.map((row) => ({
         id: row.id,
         eventType: row.eventType,
-        userId: row.userId,
-        username: row.username,
+        userId: row.userId ?? void 0,
+        username: row.username ?? void 0,
         success: Boolean(row.success),
-        errorMessage: row.errorMessage,
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent,
+        errorMessage: row.errorMessage ?? void 0,
+        ipAddress: row.ipAddress ?? void 0,
+        userAgent: row.userAgent ?? void 0,
         createdAt: row.createdAt
       }));
     } catch (error) {
@@ -629,12 +306,12 @@ class AuditLogger {
       return rows.map((row) => ({
         id: row.id,
         eventType: row.eventType,
-        userId: row.userId,
-        username: row.username,
+        userId: row.userId ?? void 0,
+        username: row.username ?? void 0,
         success: Boolean(row.success),
-        errorMessage: row.errorMessage,
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent,
+        errorMessage: row.errorMessage ?? void 0,
+        ipAddress: row.ipAddress ?? void 0,
+        userAgent: row.userAgent ?? void 0,
         createdAt: row.createdAt
       }));
     } catch (error) {
@@ -867,9 +544,9 @@ class RBACManager {
    * Get all roles assigned to a user
    */
   getUserRoles(userId) {
-    const cached = this.getCachedData(userId);
-    if (cached) {
-      return cached.roles;
+    const cached2 = this.getCachedData(userId);
+    if (cached2) {
+      return cached2.roles;
     }
     const stmt = this.db.prepare(`
       SELECT r.code
@@ -886,9 +563,9 @@ class RBACManager {
    * Get all permissions for a user (aggregated from all roles)
    */
   getUserPermissions(userId) {
-    const cached = this.getCachedData(userId);
-    if (cached) {
-      return cached.permissions;
+    const cached2 = this.getCachedData(userId);
+    if (cached2) {
+      return cached2.permissions;
     }
     const stmt = this.db.prepare(`
       SELECT DISTINCT p.code
@@ -1151,13 +828,13 @@ class RBACManager {
    * Get cached data for a user if still valid
    */
   getCachedData(userId) {
-    const cached = this.cache.get(userId);
-    if (!cached) return null;
-    if (Date.now() - cached.cachedAt > this.cacheTTL) {
+    const cached2 = this.cache.get(userId);
+    if (!cached2) return null;
+    if (Date.now() - cached2.cachedAt > this.cacheTTL) {
       this.cache.delete(userId);
       return null;
     }
-    return cached;
+    return cached2;
   }
   /**
    * Update cache for a user
@@ -1189,6 +866,5565 @@ class RBACManager {
     });
   }
 }
+class ItemsManager {
+  constructor(db) {
+    __publicField(this, "db");
+    this.db = db;
+  }
+  /**
+   * Get all items
+   */
+  getAllItems() {
+    const stmt = this.db.prepare(`
+      SELECT
+        id,
+        name,
+        unit,
+        price,
+        is_active as isActive,
+        created_at as createdAt
+      FROM items
+      ORDER BY created_at DESC
+    `);
+    return stmt.all();
+  }
+  /**
+   * Get single item by ID
+   */
+  getItemById(itemId) {
+    const stmt = this.db.prepare(`
+      SELECT
+        id,
+        name,
+        unit,
+        price,
+        is_active as isActive,
+        created_at as createdAt
+      FROM items
+      WHERE id = ?
+    `);
+    const item = stmt.get(itemId);
+    return item || null;
+  }
+  /**
+   * Get price history for an item
+   */
+  getPriceHistory(itemId) {
+    const stmt = this.db.prepare(`
+      SELECT
+        id,
+        item_id as itemId,
+        old_price as oldPrice,
+        new_price as newPrice,
+        changed_by as changedBy,
+        changed_at as changedAt
+      FROM item_price_history
+      WHERE item_id = ?
+      ORDER BY changed_at DESC
+    `);
+    return stmt.all(itemId);
+  }
+  /**
+   * Create new item
+   */
+  createItem(data) {
+    const stmt = this.db.prepare(`
+      INSERT INTO items (name, unit, price, is_active)
+      VALUES (?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      data.name,
+      data.unit,
+      data.price,
+      data.isActive !== void 0 ? data.isActive ? 1 : 0 : 1
+    );
+    const newItem = this.getItemById(result.lastInsertRowid);
+    if (!newItem) {
+      throw new Error("Failed to create item");
+    }
+    return newItem;
+  }
+  /**
+   * Update existing item
+   */
+  updateItem(itemId, data, userId) {
+    const currentItem = this.getItemById(itemId);
+    if (!currentItem) {
+      return null;
+    }
+    const updates = [];
+    const values = [];
+    if (data.name !== void 0) {
+      updates.push("name = ?");
+      values.push(data.name);
+    }
+    if (data.unit !== void 0) {
+      updates.push("unit = ?");
+      values.push(data.unit);
+    }
+    if (data.price !== void 0) {
+      updates.push("price = ?");
+      values.push(data.price);
+    }
+    if (data.isActive !== void 0) {
+      updates.push("is_active = ?");
+      values.push(data.isActive ? 1 : 0);
+    }
+    if (updates.length === 0) {
+      return currentItem;
+    }
+    values.push(itemId);
+    const stmt = this.db.prepare(`
+      UPDATE items
+      SET ${updates.join(", ")}
+      WHERE id = ?
+    `);
+    const result = stmt.run(...values);
+    if (result.changes === 0) {
+      return null;
+    }
+    if (data.price !== void 0 && data.price !== currentItem.price) {
+      const insertHistory = this.db.prepare(`
+        INSERT INTO item_price_history (item_id, old_price, new_price, changed_by)
+        VALUES (?, ?, ?, ?)
+      `);
+      insertHistory.run(itemId, currentItem.price, data.price, userId || null);
+    }
+    return this.getItemById(itemId);
+  }
+  /**
+   * Delete item
+   */
+  deleteItem(itemId) {
+    const stmt = this.db.prepare(`
+      DELETE FROM items
+      WHERE id = ?
+    `);
+    const result = stmt.run(itemId);
+    return result.changes > 0;
+  }
+  /**
+   * Toggle item status (active/inactive)
+   */
+  toggleItemStatus(itemId) {
+    const item = this.getItemById(itemId);
+    if (!item) {
+      return null;
+    }
+    const newStatus = !item.isActive;
+    return this.updateItem(itemId, { isActive: newStatus });
+  }
+  /**
+   * Search items by name
+   */
+  searchItems(query) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        id,
+        name,
+        unit,
+        is_active as isActive,
+        created_at as createdAt
+      FROM items
+      WHERE name LIKE ?
+      ORDER BY created_at DESC
+    `);
+    return stmt.all(`%${query}%`);
+  }
+  /**
+   * Get active items only
+   */
+  getActiveItems() {
+    const stmt = this.db.prepare(`
+      SELECT 
+        id,
+        name,
+        unit,
+        price,
+        is_active as isActive,
+        created_at as createdAt
+      FROM items
+      WHERE is_active = 1
+      ORDER BY name ASC
+    `);
+    return stmt.all();
+  }
+}
+function $constructor(name, initializer2, params) {
+  function init(inst, def) {
+    if (!inst._zod) {
+      Object.defineProperty(inst, "_zod", {
+        value: {
+          def,
+          constr: _,
+          traits: /* @__PURE__ */ new Set()
+        },
+        enumerable: false
+      });
+    }
+    if (inst._zod.traits.has(name)) {
+      return;
+    }
+    inst._zod.traits.add(name);
+    initializer2(inst, def);
+    const proto = _.prototype;
+    const keys = Object.keys(proto);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!(k in inst)) {
+        inst[k] = proto[k].bind(inst);
+      }
+    }
+  }
+  const Parent = (params == null ? void 0 : params.Parent) ?? Object;
+  class Definition extends Parent {
+  }
+  Object.defineProperty(Definition, "name", { value: name });
+  function _(def) {
+    var _a2;
+    const inst = (params == null ? void 0 : params.Parent) ? new Definition() : this;
+    init(inst, def);
+    (_a2 = inst._zod).deferred ?? (_a2.deferred = []);
+    for (const fn of inst._zod.deferred) {
+      fn();
+    }
+    return inst;
+  }
+  Object.defineProperty(_, "init", { value: init });
+  Object.defineProperty(_, Symbol.hasInstance, {
+    value: (inst) => {
+      var _a2, _b;
+      if ((params == null ? void 0 : params.Parent) && inst instanceof params.Parent)
+        return true;
+      return (_b = (_a2 = inst == null ? void 0 : inst._zod) == null ? void 0 : _a2.traits) == null ? void 0 : _b.has(name);
+    }
+  });
+  Object.defineProperty(_, "name", { value: name });
+  return _;
+}
+class $ZodAsyncError extends Error {
+  constructor() {
+    super(`Encountered Promise during synchronous parse. Use .parseAsync() instead.`);
+  }
+}
+class $ZodEncodeError extends Error {
+  constructor(name) {
+    super(`Encountered unidirectional transform during encode: ${name}`);
+    this.name = "ZodEncodeError";
+  }
+}
+const globalConfig = {};
+function config(newConfig) {
+  return globalConfig;
+}
+function getEnumValues(entries) {
+  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
+  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+  return values;
+}
+function jsonStringifyReplacer(_, value) {
+  if (typeof value === "bigint")
+    return value.toString();
+  return value;
+}
+function cached(getter) {
+  return {
+    get value() {
+      {
+        const value = getter();
+        Object.defineProperty(this, "value", { value });
+        return value;
+      }
+    }
+  };
+}
+function nullish(input) {
+  return input === null || input === void 0;
+}
+function cleanRegex(source) {
+  const start = source.startsWith("^") ? 1 : 0;
+  const end = source.endsWith("$") ? source.length - 1 : source.length;
+  return source.slice(start, end);
+}
+function floatSafeRemainder(val, step) {
+  const valDecCount = (val.toString().split(".")[1] || "").length;
+  const stepString = step.toString();
+  let stepDecCount = (stepString.split(".")[1] || "").length;
+  if (stepDecCount === 0 && /\d?e-\d?/.test(stepString)) {
+    const match = stepString.match(/\d?e-(\d?)/);
+    if (match == null ? void 0 : match[1]) {
+      stepDecCount = Number.parseInt(match[1]);
+    }
+  }
+  const decCount = valDecCount > stepDecCount ? valDecCount : stepDecCount;
+  const valInt = Number.parseInt(val.toFixed(decCount).replace(".", ""));
+  const stepInt = Number.parseInt(step.toFixed(decCount).replace(".", ""));
+  return valInt % stepInt / 10 ** decCount;
+}
+const EVALUATING = Symbol("evaluating");
+function defineLazy(object2, key, getter) {
+  let value = void 0;
+  Object.defineProperty(object2, key, {
+    get() {
+      if (value === EVALUATING) {
+        return void 0;
+      }
+      if (value === void 0) {
+        value = EVALUATING;
+        value = getter();
+      }
+      return value;
+    },
+    set(v) {
+      Object.defineProperty(object2, key, {
+        value: v
+        // configurable: true,
+      });
+    },
+    configurable: true
+  });
+}
+function assignProp(target, prop, value) {
+  Object.defineProperty(target, prop, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+}
+function mergeDefs(...defs) {
+  const mergedDescriptors = {};
+  for (const def of defs) {
+    const descriptors = Object.getOwnPropertyDescriptors(def);
+    Object.assign(mergedDescriptors, descriptors);
+  }
+  return Object.defineProperties({}, mergedDescriptors);
+}
+function esc(str) {
+  return JSON.stringify(str);
+}
+function slugify(input) {
+  return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+const captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
+};
+function isObject(data) {
+  return typeof data === "object" && data !== null && !Array.isArray(data);
+}
+const allowsEval = cached(() => {
+  var _a2;
+  if (typeof navigator !== "undefined" && ((_a2 = navigator == null ? void 0 : navigator.userAgent) == null ? void 0 : _a2.includes("Cloudflare"))) {
+    return false;
+  }
+  try {
+    const F = Function;
+    new F("");
+    return true;
+  } catch (_) {
+    return false;
+  }
+});
+function isPlainObject(o) {
+  if (isObject(o) === false)
+    return false;
+  const ctor = o.constructor;
+  if (ctor === void 0)
+    return true;
+  if (typeof ctor !== "function")
+    return true;
+  const prot = ctor.prototype;
+  if (isObject(prot) === false)
+    return false;
+  if (Object.prototype.hasOwnProperty.call(prot, "isPrototypeOf") === false) {
+    return false;
+  }
+  return true;
+}
+function shallowClone(o) {
+  if (isPlainObject(o))
+    return { ...o };
+  if (Array.isArray(o))
+    return [...o];
+  return o;
+}
+const propertyKeyTypes = /* @__PURE__ */ new Set(["string", "number", "symbol"]);
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function clone(inst, def, params) {
+  const cl = new inst._zod.constr(def ?? inst._zod.def);
+  if (!def || (params == null ? void 0 : params.parent))
+    cl._zod.parent = inst;
+  return cl;
+}
+function normalizeParams(_params) {
+  const params = _params;
+  if (!params)
+    return {};
+  if (typeof params === "string")
+    return { error: () => params };
+  if ((params == null ? void 0 : params.message) !== void 0) {
+    if ((params == null ? void 0 : params.error) !== void 0)
+      throw new Error("Cannot specify both `message` and `error` params");
+    params.error = params.message;
+  }
+  delete params.message;
+  if (typeof params.error === "string")
+    return { ...params, error: () => params.error };
+  return params;
+}
+function optionalKeys(shape) {
+  return Object.keys(shape).filter((k) => {
+    return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
+  });
+}
+const NUMBER_FORMAT_RANGES = {
+  safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  int32: [-2147483648, 2147483647],
+  uint32: [0, 4294967295],
+  float32: [-34028234663852886e22, 34028234663852886e22],
+  float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+};
+function pick(schema, mask) {
+  const currDef = schema._zod.def;
+  const checks = currDef.checks;
+  const hasChecks = checks && checks.length > 0;
+  if (hasChecks) {
+    throw new Error(".pick() cannot be used on object schemas containing refinements");
+  }
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const newShape = {};
+      for (const key in mask) {
+        if (!(key in currDef.shape)) {
+          throw new Error(`Unrecognized key: "${key}"`);
+        }
+        if (!mask[key])
+          continue;
+        newShape[key] = currDef.shape[key];
+      }
+      assignProp(this, "shape", newShape);
+      return newShape;
+    },
+    checks: []
+  });
+  return clone(schema, def);
+}
+function omit(schema, mask) {
+  const currDef = schema._zod.def;
+  const checks = currDef.checks;
+  const hasChecks = checks && checks.length > 0;
+  if (hasChecks) {
+    throw new Error(".omit() cannot be used on object schemas containing refinements");
+  }
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const newShape = { ...schema._zod.def.shape };
+      for (const key in mask) {
+        if (!(key in currDef.shape)) {
+          throw new Error(`Unrecognized key: "${key}"`);
+        }
+        if (!mask[key])
+          continue;
+        delete newShape[key];
+      }
+      assignProp(this, "shape", newShape);
+      return newShape;
+    },
+    checks: []
+  });
+  return clone(schema, def);
+}
+function extend(schema, shape) {
+  if (!isPlainObject(shape)) {
+    throw new Error("Invalid input to extend: expected a plain object");
+  }
+  const checks = schema._zod.def.checks;
+  const hasChecks = checks && checks.length > 0;
+  if (hasChecks) {
+    const existingShape = schema._zod.def.shape;
+    for (const key in shape) {
+      if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) {
+        throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
+      }
+    }
+  }
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const _shape = { ...schema._zod.def.shape, ...shape };
+      assignProp(this, "shape", _shape);
+      return _shape;
+    }
+  });
+  return clone(schema, def);
+}
+function safeExtend(schema, shape) {
+  if (!isPlainObject(shape)) {
+    throw new Error("Invalid input to safeExtend: expected a plain object");
+  }
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const _shape = { ...schema._zod.def.shape, ...shape };
+      assignProp(this, "shape", _shape);
+      return _shape;
+    }
+  });
+  return clone(schema, def);
+}
+function merge(a, b) {
+  const def = mergeDefs(a._zod.def, {
+    get shape() {
+      const _shape = { ...a._zod.def.shape, ...b._zod.def.shape };
+      assignProp(this, "shape", _shape);
+      return _shape;
+    },
+    get catchall() {
+      return b._zod.def.catchall;
+    },
+    checks: []
+    // delete existing checks
+  });
+  return clone(a, def);
+}
+function partial(Class, schema, mask) {
+  const currDef = schema._zod.def;
+  const checks = currDef.checks;
+  const hasChecks = checks && checks.length > 0;
+  if (hasChecks) {
+    throw new Error(".partial() cannot be used on object schemas containing refinements");
+  }
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const oldShape = schema._zod.def.shape;
+      const shape = { ...oldShape };
+      if (mask) {
+        for (const key in mask) {
+          if (!(key in oldShape)) {
+            throw new Error(`Unrecognized key: "${key}"`);
+          }
+          if (!mask[key])
+            continue;
+          shape[key] = Class ? new Class({
+            type: "optional",
+            innerType: oldShape[key]
+          }) : oldShape[key];
+        }
+      } else {
+        for (const key in oldShape) {
+          shape[key] = Class ? new Class({
+            type: "optional",
+            innerType: oldShape[key]
+          }) : oldShape[key];
+        }
+      }
+      assignProp(this, "shape", shape);
+      return shape;
+    },
+    checks: []
+  });
+  return clone(schema, def);
+}
+function required(Class, schema, mask) {
+  const def = mergeDefs(schema._zod.def, {
+    get shape() {
+      const oldShape = schema._zod.def.shape;
+      const shape = { ...oldShape };
+      if (mask) {
+        for (const key in mask) {
+          if (!(key in shape)) {
+            throw new Error(`Unrecognized key: "${key}"`);
+          }
+          if (!mask[key])
+            continue;
+          shape[key] = new Class({
+            type: "nonoptional",
+            innerType: oldShape[key]
+          });
+        }
+      } else {
+        for (const key in oldShape) {
+          shape[key] = new Class({
+            type: "nonoptional",
+            innerType: oldShape[key]
+          });
+        }
+      }
+      assignProp(this, "shape", shape);
+      return shape;
+    }
+  });
+  return clone(schema, def);
+}
+function aborted(x, startIndex = 0) {
+  var _a2;
+  if (x.aborted === true)
+    return true;
+  for (let i = startIndex; i < x.issues.length; i++) {
+    if (((_a2 = x.issues[i]) == null ? void 0 : _a2.continue) !== true) {
+      return true;
+    }
+  }
+  return false;
+}
+function prefixIssues(path2, issues) {
+  return issues.map((iss) => {
+    var _a2;
+    (_a2 = iss).path ?? (_a2.path = []);
+    iss.path.unshift(path2);
+    return iss;
+  });
+}
+function unwrapMessage(message) {
+  return typeof message === "string" ? message : message == null ? void 0 : message.message;
+}
+function finalizeIssue(iss, ctx, config2) {
+  var _a2, _b, _c, _d, _e, _f;
+  const full = { ...iss, path: iss.path ?? [] };
+  if (!iss.message) {
+    const message = unwrapMessage((_c = (_b = (_a2 = iss.inst) == null ? void 0 : _a2._zod.def) == null ? void 0 : _b.error) == null ? void 0 : _c.call(_b, iss)) ?? unwrapMessage((_d = ctx == null ? void 0 : ctx.error) == null ? void 0 : _d.call(ctx, iss)) ?? unwrapMessage((_e = config2.customError) == null ? void 0 : _e.call(config2, iss)) ?? unwrapMessage((_f = config2.localeError) == null ? void 0 : _f.call(config2, iss)) ?? "Invalid input";
+    full.message = message;
+  }
+  delete full.inst;
+  delete full.continue;
+  if (!(ctx == null ? void 0 : ctx.reportInput)) {
+    delete full.input;
+  }
+  return full;
+}
+function getLengthableOrigin(input) {
+  if (Array.isArray(input))
+    return "array";
+  if (typeof input === "string")
+    return "string";
+  return "unknown";
+}
+function issue(...args) {
+  const [iss, input, inst] = args;
+  if (typeof iss === "string") {
+    return {
+      message: iss,
+      code: "custom",
+      input,
+      inst
+    };
+  }
+  return { ...iss };
+}
+const initializer$1 = (inst, def) => {
+  inst.name = "$ZodError";
+  Object.defineProperty(inst, "_zod", {
+    value: inst._zod,
+    enumerable: false
+  });
+  Object.defineProperty(inst, "issues", {
+    value: def,
+    enumerable: false
+  });
+  inst.message = JSON.stringify(def, jsonStringifyReplacer, 2);
+  Object.defineProperty(inst, "toString", {
+    value: () => inst.message,
+    enumerable: false
+  });
+};
+const $ZodError = $constructor("$ZodError", initializer$1);
+const $ZodRealError = $constructor("$ZodError", initializer$1, { Parent: Error });
+function flattenError(error, mapper = (issue2) => issue2.message) {
+  const fieldErrors = {};
+  const formErrors = [];
+  for (const sub of error.issues) {
+    if (sub.path.length > 0) {
+      fieldErrors[sub.path[0]] = fieldErrors[sub.path[0]] || [];
+      fieldErrors[sub.path[0]].push(mapper(sub));
+    } else {
+      formErrors.push(mapper(sub));
+    }
+  }
+  return { formErrors, fieldErrors };
+}
+function formatError(error, mapper = (issue2) => issue2.message) {
+  const fieldErrors = { _errors: [] };
+  const processError = (error2) => {
+    for (const issue2 of error2.issues) {
+      if (issue2.code === "invalid_union" && issue2.errors.length) {
+        issue2.errors.map((issues) => processError({ issues }));
+      } else if (issue2.code === "invalid_key") {
+        processError({ issues: issue2.issues });
+      } else if (issue2.code === "invalid_element") {
+        processError({ issues: issue2.issues });
+      } else if (issue2.path.length === 0) {
+        fieldErrors._errors.push(mapper(issue2));
+      } else {
+        let curr = fieldErrors;
+        let i = 0;
+        while (i < issue2.path.length) {
+          const el = issue2.path[i];
+          const terminal = i === issue2.path.length - 1;
+          if (!terminal) {
+            curr[el] = curr[el] || { _errors: [] };
+          } else {
+            curr[el] = curr[el] || { _errors: [] };
+            curr[el]._errors.push(mapper(issue2));
+          }
+          curr = curr[el];
+          i++;
+        }
+      }
+    }
+  };
+  processError(error);
+  return fieldErrors;
+}
+const _parse = (_Err) => (schema, value, _ctx, _params) => {
+  const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
+  const result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise) {
+    throw new $ZodAsyncError();
+  }
+  if (result.issues.length) {
+    const e = new ((_params == null ? void 0 : _params.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+    captureStackTrace(e, _params == null ? void 0 : _params.callee);
+    throw e;
+  }
+  return result.value;
+};
+const _parseAsync = (_Err) => async (schema, value, _ctx, params) => {
+  const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
+  let result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise)
+    result = await result;
+  if (result.issues.length) {
+    const e = new ((params == null ? void 0 : params.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+    captureStackTrace(e, params == null ? void 0 : params.callee);
+    throw e;
+  }
+  return result.value;
+};
+const _safeParse = (_Err) => (schema, value, _ctx) => {
+  const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
+  const result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise) {
+    throw new $ZodAsyncError();
+  }
+  return result.issues.length ? {
+    success: false,
+    error: new (_Err ?? $ZodError)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+  } : { success: true, data: result.value };
+};
+const safeParse$1 = /* @__PURE__ */ _safeParse($ZodRealError);
+const _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
+  const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
+  let result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise)
+    result = await result;
+  return result.issues.length ? {
+    success: false,
+    error: new _Err(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+  } : { success: true, data: result.value };
+};
+const safeParseAsync$1 = /* @__PURE__ */ _safeParseAsync($ZodRealError);
+const _encode = (_Err) => (schema, value, _ctx) => {
+  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
+  return _parse(_Err)(schema, value, ctx);
+};
+const _decode = (_Err) => (schema, value, _ctx) => {
+  return _parse(_Err)(schema, value, _ctx);
+};
+const _encodeAsync = (_Err) => async (schema, value, _ctx) => {
+  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
+  return _parseAsync(_Err)(schema, value, ctx);
+};
+const _decodeAsync = (_Err) => async (schema, value, _ctx) => {
+  return _parseAsync(_Err)(schema, value, _ctx);
+};
+const _safeEncode = (_Err) => (schema, value, _ctx) => {
+  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
+  return _safeParse(_Err)(schema, value, ctx);
+};
+const _safeDecode = (_Err) => (schema, value, _ctx) => {
+  return _safeParse(_Err)(schema, value, _ctx);
+};
+const _safeEncodeAsync = (_Err) => async (schema, value, _ctx) => {
+  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
+  return _safeParseAsync(_Err)(schema, value, ctx);
+};
+const _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
+  return _safeParseAsync(_Err)(schema, value, _ctx);
+};
+const cuid = /^[cC][^\s-]{8,}$/;
+const cuid2 = /^[0-9a-z]+$/;
+const ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
+const xid = /^[0-9a-vA-V]{20}$/;
+const ksuid = /^[A-Za-z0-9]{27}$/;
+const nanoid = /^[a-zA-Z0-9_-]{21}$/;
+const duration$1 = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
+const guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+const uuid = (version2) => {
+  if (!version2)
+    return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
+  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version2}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+};
+const email = /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
+const _emoji$1 = `^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$`;
+function emoji() {
+  return new RegExp(_emoji$1, "u");
+}
+const ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
+const ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
+const cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
+const cidrv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
+const base64 = /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/;
+const base64url = /^[A-Za-z0-9_-]*$/;
+const e164 = /^\+[1-9]\d{6,14}$/;
+const dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
+const date$1 = /* @__PURE__ */ new RegExp(`^${dateSource}$`);
+function timeSource(args) {
+  const hhmm = `(?:[01]\\d|2[0-3]):[0-5]\\d`;
+  const regex = typeof args.precision === "number" ? args.precision === -1 ? `${hhmm}` : args.precision === 0 ? `${hhmm}:[0-5]\\d` : `${hhmm}:[0-5]\\d\\.\\d{${args.precision}}` : `${hhmm}(?::[0-5]\\d(?:\\.\\d+)?)?`;
+  return regex;
+}
+function time$1(args) {
+  return new RegExp(`^${timeSource(args)}$`);
+}
+function datetime$1(args) {
+  const time2 = timeSource({ precision: args.precision });
+  const opts = ["Z"];
+  if (args.local)
+    opts.push("");
+  if (args.offset)
+    opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
+  const timeRegex = `${time2}(?:${opts.join("|")})`;
+  return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
+}
+const string$1 = (params) => {
+  const regex = params ? `[\\s\\S]{${(params == null ? void 0 : params.minimum) ?? 0},${(params == null ? void 0 : params.maximum) ?? ""}}` : `[\\s\\S]*`;
+  return new RegExp(`^${regex}$`);
+};
+const integer = /^-?\d+$/;
+const number$1 = /^-?\d+(?:\.\d+)?$/;
+const boolean$1 = /^(?:true|false)$/i;
+const lowercase = /^[^A-Z]*$/;
+const uppercase = /^[^a-z]*$/;
+const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
+  var _a2;
+  inst._zod ?? (inst._zod = {});
+  inst._zod.def = def;
+  (_a2 = inst._zod).onattach ?? (_a2.onattach = []);
+});
+const numericOriginMap = {
+  number: "number",
+  bigint: "bigint",
+  object: "date"
+};
+const $ZodCheckLessThan = /* @__PURE__ */ $constructor("$ZodCheckLessThan", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const origin = numericOriginMap[typeof def.value];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    const curr = (def.inclusive ? bag.maximum : bag.exclusiveMaximum) ?? Number.POSITIVE_INFINITY;
+    if (def.value < curr) {
+      if (def.inclusive)
+        bag.maximum = def.value;
+      else
+        bag.exclusiveMaximum = def.value;
+    }
+  });
+  inst._zod.check = (payload) => {
+    if (def.inclusive ? payload.value <= def.value : payload.value < def.value) {
+      return;
+    }
+    payload.issues.push({
+      origin,
+      code: "too_big",
+      maximum: typeof def.value === "object" ? def.value.getTime() : def.value,
+      input: payload.value,
+      inclusive: def.inclusive,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckGreaterThan = /* @__PURE__ */ $constructor("$ZodCheckGreaterThan", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const origin = numericOriginMap[typeof def.value];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    const curr = (def.inclusive ? bag.minimum : bag.exclusiveMinimum) ?? Number.NEGATIVE_INFINITY;
+    if (def.value > curr) {
+      if (def.inclusive)
+        bag.minimum = def.value;
+      else
+        bag.exclusiveMinimum = def.value;
+    }
+  });
+  inst._zod.check = (payload) => {
+    if (def.inclusive ? payload.value >= def.value : payload.value > def.value) {
+      return;
+    }
+    payload.issues.push({
+      origin,
+      code: "too_small",
+      minimum: typeof def.value === "object" ? def.value.getTime() : def.value,
+      input: payload.value,
+      inclusive: def.inclusive,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  inst._zod.onattach.push((inst2) => {
+    var _a2;
+    (_a2 = inst2._zod.bag).multipleOf ?? (_a2.multipleOf = def.value);
+  });
+  inst._zod.check = (payload) => {
+    if (typeof payload.value !== typeof def.value)
+      throw new Error("Cannot mix number and bigint in multiple_of check.");
+    const isMultiple = typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0;
+    if (isMultiple)
+      return;
+    payload.issues.push({
+      origin: typeof payload.value,
+      code: "not_multiple_of",
+      divisor: def.value,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckNumberFormat = /* @__PURE__ */ $constructor("$ZodCheckNumberFormat", (inst, def) => {
+  var _a2;
+  $ZodCheck.init(inst, def);
+  def.format = def.format || "float64";
+  const isInt = (_a2 = def.format) == null ? void 0 : _a2.includes("int");
+  const origin = isInt ? "int" : "number";
+  const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.format = def.format;
+    bag.minimum = minimum;
+    bag.maximum = maximum;
+    if (isInt)
+      bag.pattern = integer;
+  });
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    if (isInt) {
+      if (!Number.isInteger(input)) {
+        payload.issues.push({
+          expected: origin,
+          format: def.format,
+          code: "invalid_type",
+          continue: false,
+          input,
+          inst
+        });
+        return;
+      }
+      if (!Number.isSafeInteger(input)) {
+        if (input > 0) {
+          payload.issues.push({
+            input,
+            code: "too_big",
+            maximum: Number.MAX_SAFE_INTEGER,
+            note: "Integers must be within the safe integer range.",
+            inst,
+            origin,
+            inclusive: true,
+            continue: !def.abort
+          });
+        } else {
+          payload.issues.push({
+            input,
+            code: "too_small",
+            minimum: Number.MIN_SAFE_INTEGER,
+            note: "Integers must be within the safe integer range.",
+            inst,
+            origin,
+            inclusive: true,
+            continue: !def.abort
+          });
+        }
+        return;
+      }
+    }
+    if (input < minimum) {
+      payload.issues.push({
+        origin: "number",
+        input,
+        code: "too_small",
+        minimum,
+        inclusive: true,
+        inst,
+        continue: !def.abort
+      });
+    }
+    if (input > maximum) {
+      payload.issues.push({
+        origin: "number",
+        input,
+        code: "too_big",
+        maximum,
+        inclusive: true,
+        inst,
+        continue: !def.abort
+      });
+    }
+  };
+});
+const $ZodCheckMaxLength = /* @__PURE__ */ $constructor("$ZodCheckMaxLength", (inst, def) => {
+  var _a2;
+  $ZodCheck.init(inst, def);
+  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
+    const val = payload.value;
+    return !nullish(val) && val.length !== void 0;
+  });
+  inst._zod.onattach.push((inst2) => {
+    const curr = inst2._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
+    if (def.maximum < curr)
+      inst2._zod.bag.maximum = def.maximum;
+  });
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    const length = input.length;
+    if (length <= def.maximum)
+      return;
+    const origin = getLengthableOrigin(input);
+    payload.issues.push({
+      origin,
+      code: "too_big",
+      maximum: def.maximum,
+      inclusive: true,
+      input,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckMinLength = /* @__PURE__ */ $constructor("$ZodCheckMinLength", (inst, def) => {
+  var _a2;
+  $ZodCheck.init(inst, def);
+  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
+    const val = payload.value;
+    return !nullish(val) && val.length !== void 0;
+  });
+  inst._zod.onattach.push((inst2) => {
+    const curr = inst2._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
+    if (def.minimum > curr)
+      inst2._zod.bag.minimum = def.minimum;
+  });
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    const length = input.length;
+    if (length >= def.minimum)
+      return;
+    const origin = getLengthableOrigin(input);
+    payload.issues.push({
+      origin,
+      code: "too_small",
+      minimum: def.minimum,
+      inclusive: true,
+      input,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckLengthEquals = /* @__PURE__ */ $constructor("$ZodCheckLengthEquals", (inst, def) => {
+  var _a2;
+  $ZodCheck.init(inst, def);
+  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
+    const val = payload.value;
+    return !nullish(val) && val.length !== void 0;
+  });
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.minimum = def.length;
+    bag.maximum = def.length;
+    bag.length = def.length;
+  });
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    const length = input.length;
+    if (length === def.length)
+      return;
+    const origin = getLengthableOrigin(input);
+    const tooBig = length > def.length;
+    payload.issues.push({
+      origin,
+      ...tooBig ? { code: "too_big", maximum: def.length } : { code: "too_small", minimum: def.length },
+      inclusive: true,
+      exact: true,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckStringFormat = /* @__PURE__ */ $constructor("$ZodCheckStringFormat", (inst, def) => {
+  var _a2, _b;
+  $ZodCheck.init(inst, def);
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.format = def.format;
+    if (def.pattern) {
+      bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
+      bag.patterns.add(def.pattern);
+    }
+  });
+  if (def.pattern)
+    (_a2 = inst._zod).check ?? (_a2.check = (payload) => {
+      def.pattern.lastIndex = 0;
+      if (def.pattern.test(payload.value))
+        return;
+      payload.issues.push({
+        origin: "string",
+        code: "invalid_format",
+        format: def.format,
+        input: payload.value,
+        ...def.pattern ? { pattern: def.pattern.toString() } : {},
+        inst,
+        continue: !def.abort
+      });
+    });
+  else
+    (_b = inst._zod).check ?? (_b.check = () => {
+    });
+});
+const $ZodCheckRegex = /* @__PURE__ */ $constructor("$ZodCheckRegex", (inst, def) => {
+  $ZodCheckStringFormat.init(inst, def);
+  inst._zod.check = (payload) => {
+    def.pattern.lastIndex = 0;
+    if (def.pattern.test(payload.value))
+      return;
+    payload.issues.push({
+      origin: "string",
+      code: "invalid_format",
+      format: "regex",
+      input: payload.value,
+      pattern: def.pattern.toString(),
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckLowerCase = /* @__PURE__ */ $constructor("$ZodCheckLowerCase", (inst, def) => {
+  def.pattern ?? (def.pattern = lowercase);
+  $ZodCheckStringFormat.init(inst, def);
+});
+const $ZodCheckUpperCase = /* @__PURE__ */ $constructor("$ZodCheckUpperCase", (inst, def) => {
+  def.pattern ?? (def.pattern = uppercase);
+  $ZodCheckStringFormat.init(inst, def);
+});
+const $ZodCheckIncludes = /* @__PURE__ */ $constructor("$ZodCheckIncludes", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const escapedRegex = escapeRegex(def.includes);
+  const pattern = new RegExp(typeof def.position === "number" ? `^.{${def.position}}${escapedRegex}` : escapedRegex);
+  def.pattern = pattern;
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
+    bag.patterns.add(pattern);
+  });
+  inst._zod.check = (payload) => {
+    if (payload.value.includes(def.includes, def.position))
+      return;
+    payload.issues.push({
+      origin: "string",
+      code: "invalid_format",
+      format: "includes",
+      includes: def.includes,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckStartsWith = /* @__PURE__ */ $constructor("$ZodCheckStartsWith", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const pattern = new RegExp(`^${escapeRegex(def.prefix)}.*`);
+  def.pattern ?? (def.pattern = pattern);
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
+    bag.patterns.add(pattern);
+  });
+  inst._zod.check = (payload) => {
+    if (payload.value.startsWith(def.prefix))
+      return;
+    payload.issues.push({
+      origin: "string",
+      code: "invalid_format",
+      format: "starts_with",
+      prefix: def.prefix,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckEndsWith = /* @__PURE__ */ $constructor("$ZodCheckEndsWith", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const pattern = new RegExp(`.*${escapeRegex(def.suffix)}$`);
+  def.pattern ?? (def.pattern = pattern);
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
+    bag.patterns.add(pattern);
+  });
+  inst._zod.check = (payload) => {
+    if (payload.value.endsWith(def.suffix))
+      return;
+    payload.issues.push({
+      origin: "string",
+      code: "invalid_format",
+      format: "ends_with",
+      suffix: def.suffix,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  inst._zod.check = (payload) => {
+    payload.value = def.tx(payload.value);
+  };
+});
+class Doc {
+  constructor(args = []) {
+    this.content = [];
+    this.indent = 0;
+    if (this)
+      this.args = args;
+  }
+  indented(fn) {
+    this.indent += 1;
+    fn(this);
+    this.indent -= 1;
+  }
+  write(arg) {
+    if (typeof arg === "function") {
+      arg(this, { execution: "sync" });
+      arg(this, { execution: "async" });
+      return;
+    }
+    const content = arg;
+    const lines = content.split("\n").filter((x) => x);
+    const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
+    const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
+    for (const line of dedented) {
+      this.content.push(line);
+    }
+  }
+  compile() {
+    const F = Function;
+    const args = this == null ? void 0 : this.args;
+    const content = (this == null ? void 0 : this.content) ?? [``];
+    const lines = [...content.map((x) => `  ${x}`)];
+    return new F(...args, lines.join("\n"));
+  }
+}
+const version = {
+  major: 4,
+  minor: 3,
+  patch: 4
+};
+const $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
+  var _a3;
+  var _a2;
+  inst ?? (inst = {});
+  inst._zod.def = def;
+  inst._zod.bag = inst._zod.bag || {};
+  inst._zod.version = version;
+  const checks = [...inst._zod.def.checks ?? []];
+  if (inst._zod.traits.has("$ZodCheck")) {
+    checks.unshift(inst);
+  }
+  for (const ch of checks) {
+    for (const fn of ch._zod.onattach) {
+      fn(inst);
+    }
+  }
+  if (checks.length === 0) {
+    (_a2 = inst._zod).deferred ?? (_a2.deferred = []);
+    (_a3 = inst._zod.deferred) == null ? void 0 : _a3.push(() => {
+      inst._zod.run = inst._zod.parse;
+    });
+  } else {
+    const runChecks = (payload, checks2, ctx) => {
+      let isAborted = aborted(payload);
+      let asyncResult;
+      for (const ch of checks2) {
+        if (ch._zod.def.when) {
+          const shouldRun = ch._zod.def.when(payload);
+          if (!shouldRun)
+            continue;
+        } else if (isAborted) {
+          continue;
+        }
+        const currLen = payload.issues.length;
+        const _ = ch._zod.check(payload);
+        if (_ instanceof Promise && (ctx == null ? void 0 : ctx.async) === false) {
+          throw new $ZodAsyncError();
+        }
+        if (asyncResult || _ instanceof Promise) {
+          asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
+            await _;
+            const nextLen = payload.issues.length;
+            if (nextLen === currLen)
+              return;
+            if (!isAborted)
+              isAborted = aborted(payload, currLen);
+          });
+        } else {
+          const nextLen = payload.issues.length;
+          if (nextLen === currLen)
+            continue;
+          if (!isAborted)
+            isAborted = aborted(payload, currLen);
+        }
+      }
+      if (asyncResult) {
+        return asyncResult.then(() => {
+          return payload;
+        });
+      }
+      return payload;
+    };
+    const handleCanaryResult = (canary, payload, ctx) => {
+      if (aborted(canary)) {
+        canary.aborted = true;
+        return canary;
+      }
+      const checkResult = runChecks(payload, checks, ctx);
+      if (checkResult instanceof Promise) {
+        if (ctx.async === false)
+          throw new $ZodAsyncError();
+        return checkResult.then((checkResult2) => inst._zod.parse(checkResult2, ctx));
+      }
+      return inst._zod.parse(checkResult, ctx);
+    };
+    inst._zod.run = (payload, ctx) => {
+      if (ctx.skipChecks) {
+        return inst._zod.parse(payload, ctx);
+      }
+      if (ctx.direction === "backward") {
+        const canary = inst._zod.parse({ value: payload.value, issues: [] }, { ...ctx, skipChecks: true });
+        if (canary instanceof Promise) {
+          return canary.then((canary2) => {
+            return handleCanaryResult(canary2, payload, ctx);
+          });
+        }
+        return handleCanaryResult(canary, payload, ctx);
+      }
+      const result = inst._zod.parse(payload, ctx);
+      if (result instanceof Promise) {
+        if (ctx.async === false)
+          throw new $ZodAsyncError();
+        return result.then((result2) => runChecks(result2, checks, ctx));
+      }
+      return runChecks(result, checks, ctx);
+    };
+  }
+  defineLazy(inst, "~standard", () => ({
+    validate: (value) => {
+      var _a4;
+      try {
+        const r = safeParse$1(inst, value);
+        return r.success ? { value: r.data } : { issues: (_a4 = r.error) == null ? void 0 : _a4.issues };
+      } catch (_) {
+        return safeParseAsync$1(inst, value).then((r) => {
+          var _a5;
+          return r.success ? { value: r.data } : { issues: (_a5 = r.error) == null ? void 0 : _a5.issues };
+        });
+      }
+    },
+    vendor: "zod",
+    version: 1
+  }));
+});
+const $ZodString = /* @__PURE__ */ $constructor("$ZodString", (inst, def) => {
+  var _a2;
+  $ZodType.init(inst, def);
+  inst._zod.pattern = [...((_a2 = inst == null ? void 0 : inst._zod.bag) == null ? void 0 : _a2.patterns) ?? []].pop() ?? string$1(inst._zod.bag);
+  inst._zod.parse = (payload, _) => {
+    if (def.coerce)
+      try {
+        payload.value = String(payload.value);
+      } catch (_2) {
+      }
+    if (typeof payload.value === "string")
+      return payload;
+    payload.issues.push({
+      expected: "string",
+      code: "invalid_type",
+      input: payload.value,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodStringFormat = /* @__PURE__ */ $constructor("$ZodStringFormat", (inst, def) => {
+  $ZodCheckStringFormat.init(inst, def);
+  $ZodString.init(inst, def);
+});
+const $ZodGUID = /* @__PURE__ */ $constructor("$ZodGUID", (inst, def) => {
+  def.pattern ?? (def.pattern = guid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodUUID = /* @__PURE__ */ $constructor("$ZodUUID", (inst, def) => {
+  if (def.version) {
+    const versionMap = {
+      v1: 1,
+      v2: 2,
+      v3: 3,
+      v4: 4,
+      v5: 5,
+      v6: 6,
+      v7: 7,
+      v8: 8
+    };
+    const v = versionMap[def.version];
+    if (v === void 0)
+      throw new Error(`Invalid UUID version: "${def.version}"`);
+    def.pattern ?? (def.pattern = uuid(v));
+  } else
+    def.pattern ?? (def.pattern = uuid());
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodEmail = /* @__PURE__ */ $constructor("$ZodEmail", (inst, def) => {
+  def.pattern ?? (def.pattern = email);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodURL = /* @__PURE__ */ $constructor("$ZodURL", (inst, def) => {
+  $ZodStringFormat.init(inst, def);
+  inst._zod.check = (payload) => {
+    try {
+      const trimmed = payload.value.trim();
+      const url = new URL(trimmed);
+      if (def.hostname) {
+        def.hostname.lastIndex = 0;
+        if (!def.hostname.test(url.hostname)) {
+          payload.issues.push({
+            code: "invalid_format",
+            format: "url",
+            note: "Invalid hostname",
+            pattern: def.hostname.source,
+            input: payload.value,
+            inst,
+            continue: !def.abort
+          });
+        }
+      }
+      if (def.protocol) {
+        def.protocol.lastIndex = 0;
+        if (!def.protocol.test(url.protocol.endsWith(":") ? url.protocol.slice(0, -1) : url.protocol)) {
+          payload.issues.push({
+            code: "invalid_format",
+            format: "url",
+            note: "Invalid protocol",
+            pattern: def.protocol.source,
+            input: payload.value,
+            inst,
+            continue: !def.abort
+          });
+        }
+      }
+      if (def.normalize) {
+        payload.value = url.href;
+      } else {
+        payload.value = trimmed;
+      }
+      return;
+    } catch (_) {
+      payload.issues.push({
+        code: "invalid_format",
+        format: "url",
+        input: payload.value,
+        inst,
+        continue: !def.abort
+      });
+    }
+  };
+});
+const $ZodEmoji = /* @__PURE__ */ $constructor("$ZodEmoji", (inst, def) => {
+  def.pattern ?? (def.pattern = emoji());
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodNanoID = /* @__PURE__ */ $constructor("$ZodNanoID", (inst, def) => {
+  def.pattern ?? (def.pattern = nanoid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodCUID = /* @__PURE__ */ $constructor("$ZodCUID", (inst, def) => {
+  def.pattern ?? (def.pattern = cuid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodCUID2 = /* @__PURE__ */ $constructor("$ZodCUID2", (inst, def) => {
+  def.pattern ?? (def.pattern = cuid2);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodULID = /* @__PURE__ */ $constructor("$ZodULID", (inst, def) => {
+  def.pattern ?? (def.pattern = ulid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodXID = /* @__PURE__ */ $constructor("$ZodXID", (inst, def) => {
+  def.pattern ?? (def.pattern = xid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodKSUID = /* @__PURE__ */ $constructor("$ZodKSUID", (inst, def) => {
+  def.pattern ?? (def.pattern = ksuid);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodISODateTime = /* @__PURE__ */ $constructor("$ZodISODateTime", (inst, def) => {
+  def.pattern ?? (def.pattern = datetime$1(def));
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodISODate = /* @__PURE__ */ $constructor("$ZodISODate", (inst, def) => {
+  def.pattern ?? (def.pattern = date$1);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodISOTime = /* @__PURE__ */ $constructor("$ZodISOTime", (inst, def) => {
+  def.pattern ?? (def.pattern = time$1(def));
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodISODuration = /* @__PURE__ */ $constructor("$ZodISODuration", (inst, def) => {
+  def.pattern ?? (def.pattern = duration$1);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodIPv4 = /* @__PURE__ */ $constructor("$ZodIPv4", (inst, def) => {
+  def.pattern ?? (def.pattern = ipv4);
+  $ZodStringFormat.init(inst, def);
+  inst._zod.bag.format = `ipv4`;
+});
+const $ZodIPv6 = /* @__PURE__ */ $constructor("$ZodIPv6", (inst, def) => {
+  def.pattern ?? (def.pattern = ipv6);
+  $ZodStringFormat.init(inst, def);
+  inst._zod.bag.format = `ipv6`;
+  inst._zod.check = (payload) => {
+    try {
+      new URL(`http://[${payload.value}]`);
+    } catch {
+      payload.issues.push({
+        code: "invalid_format",
+        format: "ipv6",
+        input: payload.value,
+        inst,
+        continue: !def.abort
+      });
+    }
+  };
+});
+const $ZodCIDRv4 = /* @__PURE__ */ $constructor("$ZodCIDRv4", (inst, def) => {
+  def.pattern ?? (def.pattern = cidrv4);
+  $ZodStringFormat.init(inst, def);
+});
+const $ZodCIDRv6 = /* @__PURE__ */ $constructor("$ZodCIDRv6", (inst, def) => {
+  def.pattern ?? (def.pattern = cidrv6);
+  $ZodStringFormat.init(inst, def);
+  inst._zod.check = (payload) => {
+    const parts = payload.value.split("/");
+    try {
+      if (parts.length !== 2)
+        throw new Error();
+      const [address, prefix] = parts;
+      if (!prefix)
+        throw new Error();
+      const prefixNum = Number(prefix);
+      if (`${prefixNum}` !== prefix)
+        throw new Error();
+      if (prefixNum < 0 || prefixNum > 128)
+        throw new Error();
+      new URL(`http://[${address}]`);
+    } catch {
+      payload.issues.push({
+        code: "invalid_format",
+        format: "cidrv6",
+        input: payload.value,
+        inst,
+        continue: !def.abort
+      });
+    }
+  };
+});
+function isValidBase64(data) {
+  if (data === "")
+    return true;
+  if (data.length % 4 !== 0)
+    return false;
+  try {
+    atob(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const $ZodBase64 = /* @__PURE__ */ $constructor("$ZodBase64", (inst, def) => {
+  def.pattern ?? (def.pattern = base64);
+  $ZodStringFormat.init(inst, def);
+  inst._zod.bag.contentEncoding = "base64";
+  inst._zod.check = (payload) => {
+    if (isValidBase64(payload.value))
+      return;
+    payload.issues.push({
+      code: "invalid_format",
+      format: "base64",
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+function isValidBase64URL(data) {
+  if (!base64url.test(data))
+    return false;
+  const base642 = data.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
+  const padded = base642.padEnd(Math.ceil(base642.length / 4) * 4, "=");
+  return isValidBase64(padded);
+}
+const $ZodBase64URL = /* @__PURE__ */ $constructor("$ZodBase64URL", (inst, def) => {
+  def.pattern ?? (def.pattern = base64url);
+  $ZodStringFormat.init(inst, def);
+  inst._zod.bag.contentEncoding = "base64url";
+  inst._zod.check = (payload) => {
+    if (isValidBase64URL(payload.value))
+      return;
+    payload.issues.push({
+      code: "invalid_format",
+      format: "base64url",
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodE164 = /* @__PURE__ */ $constructor("$ZodE164", (inst, def) => {
+  def.pattern ?? (def.pattern = e164);
+  $ZodStringFormat.init(inst, def);
+});
+function isValidJWT(token, algorithm = null) {
+  try {
+    const tokensParts = token.split(".");
+    if (tokensParts.length !== 3)
+      return false;
+    const [header] = tokensParts;
+    if (!header)
+      return false;
+    const parsedHeader = JSON.parse(atob(header));
+    if ("typ" in parsedHeader && (parsedHeader == null ? void 0 : parsedHeader.typ) !== "JWT")
+      return false;
+    if (!parsedHeader.alg)
+      return false;
+    if (algorithm && (!("alg" in parsedHeader) || parsedHeader.alg !== algorithm))
+      return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+const $ZodJWT = /* @__PURE__ */ $constructor("$ZodJWT", (inst, def) => {
+  $ZodStringFormat.init(inst, def);
+  inst._zod.check = (payload) => {
+    if (isValidJWT(payload.value, def.alg))
+      return;
+    payload.issues.push({
+      code: "invalid_format",
+      format: "jwt",
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = inst._zod.bag.pattern ?? number$1;
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce)
+      try {
+        payload.value = Number(payload.value);
+      } catch (_) {
+      }
+    const input = payload.value;
+    if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) {
+      return payload;
+    }
+    const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? "Infinity" : void 0 : void 0;
+    payload.issues.push({
+      expected: "number",
+      code: "invalid_type",
+      input,
+      inst,
+      ...received ? { received } : {}
+    });
+    return payload;
+  };
+});
+const $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
+  $ZodCheckNumberFormat.init(inst, def);
+  $ZodNumber.init(inst, def);
+});
+const $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = boolean$1;
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce)
+      try {
+        payload.value = Boolean(payload.value);
+      } catch (_) {
+      }
+    const input = payload.value;
+    if (typeof input === "boolean")
+      return payload;
+    payload.issues.push({
+      expected: "boolean",
+      code: "invalid_type",
+      input,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload) => payload;
+});
+const $ZodNever = /* @__PURE__ */ $constructor("$ZodNever", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, _ctx) => {
+    payload.issues.push({
+      expected: "never",
+      code: "invalid_type",
+      input: payload.value,
+      inst
+    });
+    return payload;
+  };
+});
+function handleArrayResult(result, final, index) {
+  if (result.issues.length) {
+    final.issues.push(...prefixIssues(index, result.issues));
+  }
+  final.value[index] = result.value;
+}
+const $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, ctx) => {
+    const input = payload.value;
+    if (!Array.isArray(input)) {
+      payload.issues.push({
+        expected: "array",
+        code: "invalid_type",
+        input,
+        inst
+      });
+      return payload;
+    }
+    payload.value = Array(input.length);
+    const proms = [];
+    for (let i = 0; i < input.length; i++) {
+      const item = input[i];
+      const result = def.element._zod.run({
+        value: item,
+        issues: []
+      }, ctx);
+      if (result instanceof Promise) {
+        proms.push(result.then((result2) => handleArrayResult(result2, payload, i)));
+      } else {
+        handleArrayResult(result, payload, i);
+      }
+    }
+    if (proms.length) {
+      return Promise.all(proms).then(() => payload);
+    }
+    return payload;
+  };
+});
+function handlePropertyResult(result, final, key, input, isOptionalOut) {
+  if (result.issues.length) {
+    if (isOptionalOut && !(key in input)) {
+      return;
+    }
+    final.issues.push(...prefixIssues(key, result.issues));
+  }
+  if (result.value === void 0) {
+    if (key in input) {
+      final.value[key] = void 0;
+    }
+  } else {
+    final.value[key] = result.value;
+  }
+}
+function normalizeDef(def) {
+  var _a2, _b, _c, _d;
+  const keys = Object.keys(def.shape);
+  for (const k of keys) {
+    if (!((_d = (_c = (_b = (_a2 = def.shape) == null ? void 0 : _a2[k]) == null ? void 0 : _b._zod) == null ? void 0 : _c.traits) == null ? void 0 : _d.has("$ZodType"))) {
+      throw new Error(`Invalid element at key "${k}": expected a Zod schema`);
+    }
+  }
+  const okeys = optionalKeys(def.shape);
+  return {
+    ...def,
+    keys,
+    keySet: new Set(keys),
+    numKeys: keys.length,
+    optionalKeys: new Set(okeys)
+  };
+}
+function handleCatchall(proms, input, payload, ctx, def, inst) {
+  const unrecognized = [];
+  const keySet = def.keySet;
+  const _catchall = def.catchall._zod;
+  const t = _catchall.def.type;
+  const isOptionalOut = _catchall.optout === "optional";
+  for (const key in input) {
+    if (keySet.has(key))
+      continue;
+    if (t === "never") {
+      unrecognized.push(key);
+      continue;
+    }
+    const r = _catchall.run({ value: input[key], issues: [] }, ctx);
+    if (r instanceof Promise) {
+      proms.push(r.then((r2) => handlePropertyResult(r2, payload, key, input, isOptionalOut)));
+    } else {
+      handlePropertyResult(r, payload, key, input, isOptionalOut);
+    }
+  }
+  if (unrecognized.length) {
+    payload.issues.push({
+      code: "unrecognized_keys",
+      keys: unrecognized,
+      input,
+      inst
+    });
+  }
+  if (!proms.length)
+    return payload;
+  return Promise.all(proms).then(() => {
+    return payload;
+  });
+}
+const $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
+  $ZodType.init(inst, def);
+  const desc = Object.getOwnPropertyDescriptor(def, "shape");
+  if (!(desc == null ? void 0 : desc.get)) {
+    const sh = def.shape;
+    Object.defineProperty(def, "shape", {
+      get: () => {
+        const newSh = { ...sh };
+        Object.defineProperty(def, "shape", {
+          value: newSh
+        });
+        return newSh;
+      }
+    });
+  }
+  const _normalized = cached(() => normalizeDef(def));
+  defineLazy(inst._zod, "propValues", () => {
+    const shape = def.shape;
+    const propValues = {};
+    for (const key in shape) {
+      const field = shape[key]._zod;
+      if (field.values) {
+        propValues[key] ?? (propValues[key] = /* @__PURE__ */ new Set());
+        for (const v of field.values)
+          propValues[key].add(v);
+      }
+    }
+    return propValues;
+  });
+  const isObject$1 = isObject;
+  const catchall = def.catchall;
+  let value;
+  inst._zod.parse = (payload, ctx) => {
+    value ?? (value = _normalized.value);
+    const input = payload.value;
+    if (!isObject$1(input)) {
+      payload.issues.push({
+        expected: "object",
+        code: "invalid_type",
+        input,
+        inst
+      });
+      return payload;
+    }
+    payload.value = {};
+    const proms = [];
+    const shape = value.shape;
+    for (const key of value.keys) {
+      const el = shape[key];
+      const isOptionalOut = el._zod.optout === "optional";
+      const r = el._zod.run({ value: input[key], issues: [] }, ctx);
+      if (r instanceof Promise) {
+        proms.push(r.then((r2) => handlePropertyResult(r2, payload, key, input, isOptionalOut)));
+      } else {
+        handlePropertyResult(r, payload, key, input, isOptionalOut);
+      }
+    }
+    if (!catchall) {
+      return proms.length ? Promise.all(proms).then(() => payload) : payload;
+    }
+    return handleCatchall(proms, input, payload, ctx, _normalized.value, inst);
+  };
+});
+const $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) => {
+  $ZodObject.init(inst, def);
+  const superParse = inst._zod.parse;
+  const _normalized = cached(() => normalizeDef(def));
+  const generateFastpass = (shape) => {
+    var _a2;
+    const doc = new Doc(["shape", "payload", "ctx"]);
+    const normalized = _normalized.value;
+    const parseStr = (key) => {
+      const k = esc(key);
+      return `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
+    };
+    doc.write(`const input = payload.value;`);
+    const ids = /* @__PURE__ */ Object.create(null);
+    let counter = 0;
+    for (const key of normalized.keys) {
+      ids[key] = `key_${counter++}`;
+    }
+    doc.write(`const newResult = {};`);
+    for (const key of normalized.keys) {
+      const id = ids[key];
+      const k = esc(key);
+      const schema = shape[key];
+      const isOptionalOut = ((_a2 = schema == null ? void 0 : schema._zod) == null ? void 0 : _a2.optout) === "optional";
+      doc.write(`const ${id} = ${parseStr(key)};`);
+      if (isOptionalOut) {
+        doc.write(`
+        if (${id}.issues.length) {
+          if (${k} in input) {
+            payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+              ...iss,
+              path: iss.path ? [${k}, ...iss.path] : [${k}]
+            })));
+          }
+        }
+        
+        if (${id}.value === undefined) {
+          if (${k} in input) {
+            newResult[${k}] = undefined;
+          }
+        } else {
+          newResult[${k}] = ${id}.value;
+        }
+        
+      `);
+      } else {
+        doc.write(`
+        if (${id}.issues.length) {
+          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+            ...iss,
+            path: iss.path ? [${k}, ...iss.path] : [${k}]
+          })));
+        }
+        
+        if (${id}.value === undefined) {
+          if (${k} in input) {
+            newResult[${k}] = undefined;
+          }
+        } else {
+          newResult[${k}] = ${id}.value;
+        }
+        
+      `);
+      }
+    }
+    doc.write(`payload.value = newResult;`);
+    doc.write(`return payload;`);
+    const fn = doc.compile();
+    return (payload, ctx) => fn(shape, payload, ctx);
+  };
+  let fastpass;
+  const isObject$1 = isObject;
+  const jit = !globalConfig.jitless;
+  const allowsEval$1 = allowsEval;
+  const fastEnabled = jit && allowsEval$1.value;
+  const catchall = def.catchall;
+  let value;
+  inst._zod.parse = (payload, ctx) => {
+    value ?? (value = _normalized.value);
+    const input = payload.value;
+    if (!isObject$1(input)) {
+      payload.issues.push({
+        expected: "object",
+        code: "invalid_type",
+        input,
+        inst
+      });
+      return payload;
+    }
+    if (jit && fastEnabled && (ctx == null ? void 0 : ctx.async) === false && ctx.jitless !== true) {
+      if (!fastpass)
+        fastpass = generateFastpass(def.shape);
+      payload = fastpass(payload, ctx);
+      if (!catchall)
+        return payload;
+      return handleCatchall([], input, payload, ctx, value, inst);
+    }
+    return superParse(payload, ctx);
+  };
+});
+function handleUnionResults(results, final, inst, ctx) {
+  for (const result of results) {
+    if (result.issues.length === 0) {
+      final.value = result.value;
+      return final;
+    }
+  }
+  const nonaborted = results.filter((r) => !aborted(r));
+  if (nonaborted.length === 1) {
+    final.value = nonaborted[0].value;
+    return nonaborted[0];
+  }
+  final.issues.push({
+    code: "invalid_union",
+    input: final.value,
+    inst,
+    errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+  });
+  return final;
+}
+const $ZodUnion = /* @__PURE__ */ $constructor("$ZodUnion", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "optin", () => def.options.some((o) => o._zod.optin === "optional") ? "optional" : void 0);
+  defineLazy(inst._zod, "optout", () => def.options.some((o) => o._zod.optout === "optional") ? "optional" : void 0);
+  defineLazy(inst._zod, "values", () => {
+    if (def.options.every((o) => o._zod.values)) {
+      return new Set(def.options.flatMap((option) => Array.from(option._zod.values)));
+    }
+    return void 0;
+  });
+  defineLazy(inst._zod, "pattern", () => {
+    if (def.options.every((o) => o._zod.pattern)) {
+      const patterns = def.options.map((o) => o._zod.pattern);
+      return new RegExp(`^(${patterns.map((p) => cleanRegex(p.source)).join("|")})$`);
+    }
+    return void 0;
+  });
+  const single = def.options.length === 1;
+  const first = def.options[0]._zod.run;
+  inst._zod.parse = (payload, ctx) => {
+    if (single) {
+      return first(payload, ctx);
+    }
+    let async = false;
+    const results = [];
+    for (const option of def.options) {
+      const result = option._zod.run({
+        value: payload.value,
+        issues: []
+      }, ctx);
+      if (result instanceof Promise) {
+        results.push(result);
+        async = true;
+      } else {
+        if (result.issues.length === 0)
+          return result;
+        results.push(result);
+      }
+    }
+    if (!async)
+      return handleUnionResults(results, payload, inst, ctx);
+    return Promise.all(results).then((results2) => {
+      return handleUnionResults(results2, payload, inst, ctx);
+    });
+  };
+});
+const $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, ctx) => {
+    const input = payload.value;
+    const left = def.left._zod.run({ value: input, issues: [] }, ctx);
+    const right = def.right._zod.run({ value: input, issues: [] }, ctx);
+    const async = left instanceof Promise || right instanceof Promise;
+    if (async) {
+      return Promise.all([left, right]).then(([left2, right2]) => {
+        return handleIntersectionResults(payload, left2, right2);
+      });
+    }
+    return handleIntersectionResults(payload, left, right);
+  };
+});
+function mergeValues(a, b) {
+  if (a === b) {
+    return { valid: true, data: a };
+  }
+  if (a instanceof Date && b instanceof Date && +a === +b) {
+    return { valid: true, data: a };
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const bKeys = Object.keys(b);
+    const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
+    const newObj = { ...a, ...b };
+    for (const key of sharedKeys) {
+      const sharedValue = mergeValues(a[key], b[key]);
+      if (!sharedValue.valid) {
+        return {
+          valid: false,
+          mergeErrorPath: [key, ...sharedValue.mergeErrorPath]
+        };
+      }
+      newObj[key] = sharedValue.data;
+    }
+    return { valid: true, data: newObj };
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return { valid: false, mergeErrorPath: [] };
+    }
+    const newArray = [];
+    for (let index = 0; index < a.length; index++) {
+      const itemA = a[index];
+      const itemB = b[index];
+      const sharedValue = mergeValues(itemA, itemB);
+      if (!sharedValue.valid) {
+        return {
+          valid: false,
+          mergeErrorPath: [index, ...sharedValue.mergeErrorPath]
+        };
+      }
+      newArray.push(sharedValue.data);
+    }
+    return { valid: true, data: newArray };
+  }
+  return { valid: false, mergeErrorPath: [] };
+}
+function handleIntersectionResults(result, left, right) {
+  const unrecKeys = /* @__PURE__ */ new Map();
+  let unrecIssue;
+  for (const iss of left.issues) {
+    if (iss.code === "unrecognized_keys") {
+      unrecIssue ?? (unrecIssue = iss);
+      for (const k of iss.keys) {
+        if (!unrecKeys.has(k))
+          unrecKeys.set(k, {});
+        unrecKeys.get(k).l = true;
+      }
+    } else {
+      result.issues.push(iss);
+    }
+  }
+  for (const iss of right.issues) {
+    if (iss.code === "unrecognized_keys") {
+      for (const k of iss.keys) {
+        if (!unrecKeys.has(k))
+          unrecKeys.set(k, {});
+        unrecKeys.get(k).r = true;
+      }
+    } else {
+      result.issues.push(iss);
+    }
+  }
+  const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
+  if (bothKeys.length && unrecIssue) {
+    result.issues.push({ ...unrecIssue, keys: bothKeys });
+  }
+  if (aborted(result))
+    return result;
+  const merged = mergeValues(left.value, right.value);
+  if (!merged.valid) {
+    throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
+  }
+  result.value = merged.data;
+  return result;
+}
+const $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
+  $ZodType.init(inst, def);
+  const values = getEnumValues(def.entries);
+  const valuesSet = new Set(values);
+  inst._zod.values = valuesSet;
+  inst._zod.pattern = new RegExp(`^(${values.filter((k) => propertyKeyTypes.has(typeof k)).map((o) => typeof o === "string" ? escapeRegex(o) : o.toString()).join("|")})$`);
+  inst._zod.parse = (payload, _ctx) => {
+    const input = payload.value;
+    if (valuesSet.has(input)) {
+      return payload;
+    }
+    payload.issues.push({
+      code: "invalid_value",
+      values,
+      input,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      throw new $ZodEncodeError(inst.constructor.name);
+    }
+    const _out = def.transform(payload.value, payload);
+    if (ctx.async) {
+      const output = _out instanceof Promise ? _out : Promise.resolve(_out);
+      return output.then((output2) => {
+        payload.value = output2;
+        return payload;
+      });
+    }
+    if (_out instanceof Promise) {
+      throw new $ZodAsyncError();
+    }
+    payload.value = _out;
+    return payload;
+  };
+});
+function handleOptionalResult(result, input) {
+  if (result.issues.length && input === void 0) {
+    return { issues: [], value: void 0 };
+  }
+  return result;
+}
+const $ZodOptional = /* @__PURE__ */ $constructor("$ZodOptional", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.optin = "optional";
+  inst._zod.optout = "optional";
+  defineLazy(inst._zod, "values", () => {
+    return def.innerType._zod.values ? /* @__PURE__ */ new Set([...def.innerType._zod.values, void 0]) : void 0;
+  });
+  defineLazy(inst._zod, "pattern", () => {
+    const pattern = def.innerType._zod.pattern;
+    return pattern ? new RegExp(`^(${cleanRegex(pattern.source)})?$`) : void 0;
+  });
+  inst._zod.parse = (payload, ctx) => {
+    if (def.innerType._zod.optin === "optional") {
+      const result = def.innerType._zod.run(payload, ctx);
+      if (result instanceof Promise)
+        return result.then((r) => handleOptionalResult(r, payload.value));
+      return handleOptionalResult(result, payload.value);
+    }
+    if (payload.value === void 0) {
+      return payload;
+    }
+    return def.innerType._zod.run(payload, ctx);
+  };
+});
+const $ZodExactOptional = /* @__PURE__ */ $constructor("$ZodExactOptional", (inst, def) => {
+  $ZodOptional.init(inst, def);
+  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
+  defineLazy(inst._zod, "pattern", () => def.innerType._zod.pattern);
+  inst._zod.parse = (payload, ctx) => {
+    return def.innerType._zod.run(payload, ctx);
+  };
+});
+const $ZodNullable = /* @__PURE__ */ $constructor("$ZodNullable", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "optin", () => def.innerType._zod.optin);
+  defineLazy(inst._zod, "optout", () => def.innerType._zod.optout);
+  defineLazy(inst._zod, "pattern", () => {
+    const pattern = def.innerType._zod.pattern;
+    return pattern ? new RegExp(`^(${cleanRegex(pattern.source)}|null)$`) : void 0;
+  });
+  defineLazy(inst._zod, "values", () => {
+    return def.innerType._zod.values ? /* @__PURE__ */ new Set([...def.innerType._zod.values, null]) : void 0;
+  });
+  inst._zod.parse = (payload, ctx) => {
+    if (payload.value === null)
+      return payload;
+    return def.innerType._zod.run(payload, ctx);
+  };
+});
+const $ZodDefault = /* @__PURE__ */ $constructor("$ZodDefault", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.optin = "optional";
+  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      return def.innerType._zod.run(payload, ctx);
+    }
+    if (payload.value === void 0) {
+      payload.value = def.defaultValue;
+      return payload;
+    }
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => handleDefaultResult(result2, def));
+    }
+    return handleDefaultResult(result, def);
+  };
+});
+function handleDefaultResult(payload, def) {
+  if (payload.value === void 0) {
+    payload.value = def.defaultValue;
+  }
+  return payload;
+}
+const $ZodPrefault = /* @__PURE__ */ $constructor("$ZodPrefault", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.optin = "optional";
+  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      return def.innerType._zod.run(payload, ctx);
+    }
+    if (payload.value === void 0) {
+      payload.value = def.defaultValue;
+    }
+    return def.innerType._zod.run(payload, ctx);
+  };
+});
+const $ZodNonOptional = /* @__PURE__ */ $constructor("$ZodNonOptional", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "values", () => {
+    const v = def.innerType._zod.values;
+    return v ? new Set([...v].filter((x) => x !== void 0)) : void 0;
+  });
+  inst._zod.parse = (payload, ctx) => {
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => handleNonOptionalResult(result2, inst));
+    }
+    return handleNonOptionalResult(result, inst);
+  };
+});
+function handleNonOptionalResult(payload, inst) {
+  if (!payload.issues.length && payload.value === void 0) {
+    payload.issues.push({
+      code: "invalid_type",
+      expected: "nonoptional",
+      input: payload.value,
+      inst
+    });
+  }
+  return payload;
+}
+const $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "optin", () => def.innerType._zod.optin);
+  defineLazy(inst._zod, "optout", () => def.innerType._zod.optout);
+  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      return def.innerType._zod.run(payload, ctx);
+    }
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => {
+        payload.value = result2.value;
+        if (result2.issues.length) {
+          payload.value = def.catchValue({
+            ...payload,
+            error: {
+              issues: result2.issues.map((iss) => finalizeIssue(iss, ctx, config()))
+            },
+            input: payload.value
+          });
+          payload.issues = [];
+        }
+        return payload;
+      });
+    }
+    payload.value = result.value;
+    if (result.issues.length) {
+      payload.value = def.catchValue({
+        ...payload,
+        error: {
+          issues: result.issues.map((iss) => finalizeIssue(iss, ctx, config()))
+        },
+        input: payload.value
+      });
+      payload.issues = [];
+    }
+    return payload;
+  };
+});
+const $ZodPipe = /* @__PURE__ */ $constructor("$ZodPipe", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "values", () => def.in._zod.values);
+  defineLazy(inst._zod, "optin", () => def.in._zod.optin);
+  defineLazy(inst._zod, "optout", () => def.out._zod.optout);
+  defineLazy(inst._zod, "propValues", () => def.in._zod.propValues);
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      const right = def.out._zod.run(payload, ctx);
+      if (right instanceof Promise) {
+        return right.then((right2) => handlePipeResult(right2, def.in, ctx));
+      }
+      return handlePipeResult(right, def.in, ctx);
+    }
+    const left = def.in._zod.run(payload, ctx);
+    if (left instanceof Promise) {
+      return left.then((left2) => handlePipeResult(left2, def.out, ctx));
+    }
+    return handlePipeResult(left, def.out, ctx);
+  };
+});
+function handlePipeResult(left, next, ctx) {
+  if (left.issues.length) {
+    left.aborted = true;
+    return left;
+  }
+  return next._zod.run({ value: left.value, issues: left.issues }, ctx);
+}
+const $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
+  $ZodType.init(inst, def);
+  defineLazy(inst._zod, "propValues", () => def.innerType._zod.propValues);
+  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
+  defineLazy(inst._zod, "optin", () => {
+    var _a2, _b;
+    return (_b = (_a2 = def.innerType) == null ? void 0 : _a2._zod) == null ? void 0 : _b.optin;
+  });
+  defineLazy(inst._zod, "optout", () => {
+    var _a2, _b;
+    return (_b = (_a2 = def.innerType) == null ? void 0 : _a2._zod) == null ? void 0 : _b.optout;
+  });
+  inst._zod.parse = (payload, ctx) => {
+    if (ctx.direction === "backward") {
+      return def.innerType._zod.run(payload, ctx);
+    }
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then(handleReadonlyResult);
+    }
+    return handleReadonlyResult(result);
+  };
+});
+function handleReadonlyResult(payload) {
+  payload.value = Object.freeze(payload.value);
+  return payload;
+}
+const $ZodCustom = /* @__PURE__ */ $constructor("$ZodCustom", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, _) => {
+    return payload;
+  };
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    const r = def.fn(input);
+    if (r instanceof Promise) {
+      return r.then((r2) => handleRefineResult(r2, payload, input, inst));
+    }
+    handleRefineResult(r, payload, input, inst);
+    return;
+  };
+});
+function handleRefineResult(result, payload, input, inst) {
+  if (!result) {
+    const _iss = {
+      code: "custom",
+      input,
+      inst,
+      // incorporates params.error into issue reporting
+      path: [...inst._zod.def.path ?? []],
+      // incorporates params.error into issue reporting
+      continue: !inst._zod.def.abort
+      // params: inst._zod.def.params,
+    };
+    if (inst._zod.def.params)
+      _iss.params = inst._zod.def.params;
+    payload.issues.push(issue(_iss));
+  }
+}
+var _a;
+class $ZodRegistry {
+  constructor() {
+    this._map = /* @__PURE__ */ new WeakMap();
+    this._idmap = /* @__PURE__ */ new Map();
+  }
+  add(schema, ..._meta) {
+    const meta = _meta[0];
+    this._map.set(schema, meta);
+    if (meta && typeof meta === "object" && "id" in meta) {
+      this._idmap.set(meta.id, schema);
+    }
+    return this;
+  }
+  clear() {
+    this._map = /* @__PURE__ */ new WeakMap();
+    this._idmap = /* @__PURE__ */ new Map();
+    return this;
+  }
+  remove(schema) {
+    const meta = this._map.get(schema);
+    if (meta && typeof meta === "object" && "id" in meta) {
+      this._idmap.delete(meta.id);
+    }
+    this._map.delete(schema);
+    return this;
+  }
+  get(schema) {
+    const p = schema._zod.parent;
+    if (p) {
+      const pm = { ...this.get(p) ?? {} };
+      delete pm.id;
+      const f = { ...pm, ...this._map.get(schema) };
+      return Object.keys(f).length ? f : void 0;
+    }
+    return this._map.get(schema);
+  }
+  has(schema) {
+    return this._map.has(schema);
+  }
+}
+function registry() {
+  return new $ZodRegistry();
+}
+(_a = globalThis).__zod_globalRegistry ?? (_a.__zod_globalRegistry = registry());
+const globalRegistry = globalThis.__zod_globalRegistry;
+// @__NO_SIDE_EFFECTS__
+function _string(Class, params) {
+  return new Class({
+    type: "string",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _email(Class, params) {
+  return new Class({
+    type: "string",
+    format: "email",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _guid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "guid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _uuid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "uuid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv4(Class, params) {
+  return new Class({
+    type: "string",
+    format: "uuid",
+    check: "string_format",
+    abort: false,
+    version: "v4",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv6(Class, params) {
+  return new Class({
+    type: "string",
+    format: "uuid",
+    check: "string_format",
+    abort: false,
+    version: "v6",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv7(Class, params) {
+  return new Class({
+    type: "string",
+    format: "uuid",
+    check: "string_format",
+    abort: false,
+    version: "v7",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _url(Class, params) {
+  return new Class({
+    type: "string",
+    format: "url",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _emoji(Class, params) {
+  return new Class({
+    type: "string",
+    format: "emoji",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _nanoid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "nanoid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _cuid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "cuid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _cuid2(Class, params) {
+  return new Class({
+    type: "string",
+    format: "cuid2",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _ulid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "ulid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _xid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "xid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _ksuid(Class, params) {
+  return new Class({
+    type: "string",
+    format: "ksuid",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _ipv4(Class, params) {
+  return new Class({
+    type: "string",
+    format: "ipv4",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _ipv6(Class, params) {
+  return new Class({
+    type: "string",
+    format: "ipv6",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _cidrv4(Class, params) {
+  return new Class({
+    type: "string",
+    format: "cidrv4",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _cidrv6(Class, params) {
+  return new Class({
+    type: "string",
+    format: "cidrv6",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _base64(Class, params) {
+  return new Class({
+    type: "string",
+    format: "base64",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _base64url(Class, params) {
+  return new Class({
+    type: "string",
+    format: "base64url",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _e164(Class, params) {
+  return new Class({
+    type: "string",
+    format: "e164",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _jwt(Class, params) {
+  return new Class({
+    type: "string",
+    format: "jwt",
+    check: "string_format",
+    abort: false,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDateTime(Class, params) {
+  return new Class({
+    type: "string",
+    format: "datetime",
+    check: "string_format",
+    offset: false,
+    local: false,
+    precision: null,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDate(Class, params) {
+  return new Class({
+    type: "string",
+    format: "date",
+    check: "string_format",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _isoTime(Class, params) {
+  return new Class({
+    type: "string",
+    format: "time",
+    check: "string_format",
+    precision: null,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDuration(Class, params) {
+  return new Class({
+    type: "string",
+    format: "duration",
+    check: "string_format",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _number(Class, params) {
+  return new Class({
+    type: "number",
+    checks: [],
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _int(Class, params) {
+  return new Class({
+    type: "number",
+    check: "number_format",
+    abort: false,
+    format: "safeint",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _boolean(Class, params) {
+  return new Class({
+    type: "boolean",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _unknown(Class) {
+  return new Class({
+    type: "unknown"
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _never(Class, params) {
+  return new Class({
+    type: "never",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _lt(value, params) {
+  return new $ZodCheckLessThan({
+    check: "less_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: false
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _lte(value, params) {
+  return new $ZodCheckLessThan({
+    check: "less_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: true
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _gt(value, params) {
+  return new $ZodCheckGreaterThan({
+    check: "greater_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: false
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _gte(value, params) {
+  return new $ZodCheckGreaterThan({
+    check: "greater_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: true
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _multipleOf(value, params) {
+  return new $ZodCheckMultipleOf({
+    check: "multiple_of",
+    ...normalizeParams(params),
+    value
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _maxLength(maximum, params) {
+  const ch = new $ZodCheckMaxLength({
+    check: "max_length",
+    ...normalizeParams(params),
+    maximum
+  });
+  return ch;
+}
+// @__NO_SIDE_EFFECTS__
+function _minLength(minimum, params) {
+  return new $ZodCheckMinLength({
+    check: "min_length",
+    ...normalizeParams(params),
+    minimum
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _length(length, params) {
+  return new $ZodCheckLengthEquals({
+    check: "length_equals",
+    ...normalizeParams(params),
+    length
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _regex(pattern, params) {
+  return new $ZodCheckRegex({
+    check: "string_format",
+    format: "regex",
+    ...normalizeParams(params),
+    pattern
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _lowercase(params) {
+  return new $ZodCheckLowerCase({
+    check: "string_format",
+    format: "lowercase",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _uppercase(params) {
+  return new $ZodCheckUpperCase({
+    check: "string_format",
+    format: "uppercase",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _includes(includes, params) {
+  return new $ZodCheckIncludes({
+    check: "string_format",
+    format: "includes",
+    ...normalizeParams(params),
+    includes
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _startsWith(prefix, params) {
+  return new $ZodCheckStartsWith({
+    check: "string_format",
+    format: "starts_with",
+    ...normalizeParams(params),
+    prefix
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _endsWith(suffix, params) {
+  return new $ZodCheckEndsWith({
+    check: "string_format",
+    format: "ends_with",
+    ...normalizeParams(params),
+    suffix
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _overwrite(tx) {
+  return new $ZodCheckOverwrite({
+    check: "overwrite",
+    tx
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _normalize(form) {
+  return /* @__PURE__ */ _overwrite((input) => input.normalize(form));
+}
+// @__NO_SIDE_EFFECTS__
+function _trim() {
+  return /* @__PURE__ */ _overwrite((input) => input.trim());
+}
+// @__NO_SIDE_EFFECTS__
+function _toLowerCase() {
+  return /* @__PURE__ */ _overwrite((input) => input.toLowerCase());
+}
+// @__NO_SIDE_EFFECTS__
+function _toUpperCase() {
+  return /* @__PURE__ */ _overwrite((input) => input.toUpperCase());
+}
+// @__NO_SIDE_EFFECTS__
+function _slugify() {
+  return /* @__PURE__ */ _overwrite((input) => slugify(input));
+}
+// @__NO_SIDE_EFFECTS__
+function _array(Class, element, params) {
+  return new Class({
+    type: "array",
+    element,
+    // get element() {
+    //   return element;
+    // },
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _refine(Class, fn, _params) {
+  const schema = new Class({
+    type: "custom",
+    check: "custom",
+    fn,
+    ...normalizeParams(_params)
+  });
+  return schema;
+}
+// @__NO_SIDE_EFFECTS__
+function _superRefine(fn) {
+  const ch = /* @__PURE__ */ _check((payload) => {
+    payload.addIssue = (issue$1) => {
+      if (typeof issue$1 === "string") {
+        payload.issues.push(issue(issue$1, payload.value, ch._zod.def));
+      } else {
+        const _issue = issue$1;
+        if (_issue.fatal)
+          _issue.continue = false;
+        _issue.code ?? (_issue.code = "custom");
+        _issue.input ?? (_issue.input = payload.value);
+        _issue.inst ?? (_issue.inst = ch);
+        _issue.continue ?? (_issue.continue = !ch._zod.def.abort);
+        payload.issues.push(issue(_issue));
+      }
+    };
+    return fn(payload.value, payload);
+  });
+  return ch;
+}
+// @__NO_SIDE_EFFECTS__
+function _check(fn, params) {
+  const ch = new $ZodCheck({
+    check: "custom",
+    ...normalizeParams(params)
+  });
+  ch._zod.check = fn;
+  return ch;
+}
+function initializeContext(params) {
+  let target = (params == null ? void 0 : params.target) ?? "draft-2020-12";
+  if (target === "draft-4")
+    target = "draft-04";
+  if (target === "draft-7")
+    target = "draft-07";
+  return {
+    processors: params.processors ?? {},
+    metadataRegistry: (params == null ? void 0 : params.metadata) ?? globalRegistry,
+    target,
+    unrepresentable: (params == null ? void 0 : params.unrepresentable) ?? "throw",
+    override: (params == null ? void 0 : params.override) ?? (() => {
+    }),
+    io: (params == null ? void 0 : params.io) ?? "output",
+    counter: 0,
+    seen: /* @__PURE__ */ new Map(),
+    cycles: (params == null ? void 0 : params.cycles) ?? "ref",
+    reused: (params == null ? void 0 : params.reused) ?? "inline",
+    external: (params == null ? void 0 : params.external) ?? void 0
+  };
+}
+function process$1(schema, ctx, _params = { path: [], schemaPath: [] }) {
+  var _a3, _b;
+  var _a2;
+  const def = schema._zod.def;
+  const seen = ctx.seen.get(schema);
+  if (seen) {
+    seen.count++;
+    const isCycle = _params.schemaPath.includes(schema);
+    if (isCycle) {
+      seen.cycle = _params.path;
+    }
+    return seen.schema;
+  }
+  const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
+  ctx.seen.set(schema, result);
+  const overrideSchema = (_b = (_a3 = schema._zod).toJSONSchema) == null ? void 0 : _b.call(_a3);
+  if (overrideSchema) {
+    result.schema = overrideSchema;
+  } else {
+    const params = {
+      ..._params,
+      schemaPath: [..._params.schemaPath, schema],
+      path: _params.path
+    };
+    if (schema._zod.processJSONSchema) {
+      schema._zod.processJSONSchema(ctx, result.schema, params);
+    } else {
+      const _json = result.schema;
+      const processor = ctx.processors[def.type];
+      if (!processor) {
+        throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
+      }
+      processor(schema, ctx, _json, params);
+    }
+    const parent = schema._zod.parent;
+    if (parent) {
+      if (!result.ref)
+        result.ref = parent;
+      process$1(parent, ctx, params);
+      ctx.seen.get(parent).isParent = true;
+    }
+  }
+  const meta = ctx.metadataRegistry.get(schema);
+  if (meta)
+    Object.assign(result.schema, meta);
+  if (ctx.io === "input" && isTransforming(schema)) {
+    delete result.schema.examples;
+    delete result.schema.default;
+  }
+  if (ctx.io === "input" && result.schema._prefault)
+    (_a2 = result.schema).default ?? (_a2.default = result.schema._prefault);
+  delete result.schema._prefault;
+  const _result = ctx.seen.get(schema);
+  return _result.schema;
+}
+function extractDefs(ctx, schema) {
+  var _a2, _b, _c, _d;
+  const root = ctx.seen.get(schema);
+  if (!root)
+    throw new Error("Unprocessed schema. This is a bug in Zod.");
+  const idToSchema = /* @__PURE__ */ new Map();
+  for (const entry of ctx.seen.entries()) {
+    const id = (_a2 = ctx.metadataRegistry.get(entry[0])) == null ? void 0 : _a2.id;
+    if (id) {
+      const existing = idToSchema.get(id);
+      if (existing && existing !== entry[0]) {
+        throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+      }
+      idToSchema.set(id, entry[0]);
+    }
+  }
+  const makeURI = (entry) => {
+    var _a3;
+    const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
+    if (ctx.external) {
+      const externalId = (_a3 = ctx.external.registry.get(entry[0])) == null ? void 0 : _a3.id;
+      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
+      if (externalId) {
+        return { ref: uriGenerator(externalId) };
+      }
+      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+      entry[1].defId = id;
+      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
+    }
+    if (entry[1] === root) {
+      return { ref: "#" };
+    }
+    const uriPrefix = `#`;
+    const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
+    const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
+    return { defId, ref: defUriPrefix + defId };
+  };
+  const extractToDef = (entry) => {
+    if (entry[1].schema.$ref) {
+      return;
+    }
+    const seen = entry[1];
+    const { ref, defId } = makeURI(entry);
+    seen.def = { ...seen.schema };
+    if (defId)
+      seen.defId = defId;
+    const schema2 = seen.schema;
+    for (const key in schema2) {
+      delete schema2[key];
+    }
+    schema2.$ref = ref;
+  };
+  if (ctx.cycles === "throw") {
+    for (const entry of ctx.seen.entries()) {
+      const seen = entry[1];
+      if (seen.cycle) {
+        throw new Error(`Cycle detected: #/${(_b = seen.cycle) == null ? void 0 : _b.join("/")}/<root>
+
+Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
+      }
+    }
+  }
+  for (const entry of ctx.seen.entries()) {
+    const seen = entry[1];
+    if (schema === entry[0]) {
+      extractToDef(entry);
+      continue;
+    }
+    if (ctx.external) {
+      const ext = (_c = ctx.external.registry.get(entry[0])) == null ? void 0 : _c.id;
+      if (schema !== entry[0] && ext) {
+        extractToDef(entry);
+        continue;
+      }
+    }
+    const id = (_d = ctx.metadataRegistry.get(entry[0])) == null ? void 0 : _d.id;
+    if (id) {
+      extractToDef(entry);
+      continue;
+    }
+    if (seen.cycle) {
+      extractToDef(entry);
+      continue;
+    }
+    if (seen.count > 1) {
+      if (ctx.reused === "ref") {
+        extractToDef(entry);
+        continue;
+      }
+    }
+  }
+}
+function finalize(ctx, schema) {
+  var _a2, _b, _c;
+  const root = ctx.seen.get(schema);
+  if (!root)
+    throw new Error("Unprocessed schema. This is a bug in Zod.");
+  const flattenRef = (zodSchema) => {
+    const seen = ctx.seen.get(zodSchema);
+    if (seen.ref === null)
+      return;
+    const schema2 = seen.def ?? seen.schema;
+    const _cached = { ...schema2 };
+    const ref = seen.ref;
+    seen.ref = null;
+    if (ref) {
+      flattenRef(ref);
+      const refSeen = ctx.seen.get(ref);
+      const refSchema = refSeen.schema;
+      if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
+        schema2.allOf = schema2.allOf ?? [];
+        schema2.allOf.push(refSchema);
+      } else {
+        Object.assign(schema2, refSchema);
+      }
+      Object.assign(schema2, _cached);
+      const isParentRef = zodSchema._zod.parent === ref;
+      if (isParentRef) {
+        for (const key in schema2) {
+          if (key === "$ref" || key === "allOf")
+            continue;
+          if (!(key in _cached)) {
+            delete schema2[key];
+          }
+        }
+      }
+      if (refSchema.$ref) {
+        for (const key in schema2) {
+          if (key === "$ref" || key === "allOf")
+            continue;
+          if (key in refSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(refSeen.def[key])) {
+            delete schema2[key];
+          }
+        }
+      }
+    }
+    const parent = zodSchema._zod.parent;
+    if (parent && parent !== ref) {
+      flattenRef(parent);
+      const parentSeen = ctx.seen.get(parent);
+      if (parentSeen == null ? void 0 : parentSeen.schema.$ref) {
+        schema2.$ref = parentSeen.schema.$ref;
+        if (parentSeen.def) {
+          for (const key in schema2) {
+            if (key === "$ref" || key === "allOf")
+              continue;
+            if (key in parentSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(parentSeen.def[key])) {
+              delete schema2[key];
+            }
+          }
+        }
+      }
+    }
+    ctx.override({
+      zodSchema,
+      jsonSchema: schema2,
+      path: seen.path ?? []
+    });
+  };
+  for (const entry of [...ctx.seen.entries()].reverse()) {
+    flattenRef(entry[0]);
+  }
+  const result = {};
+  if (ctx.target === "draft-2020-12") {
+    result.$schema = "https://json-schema.org/draft/2020-12/schema";
+  } else if (ctx.target === "draft-07") {
+    result.$schema = "http://json-schema.org/draft-07/schema#";
+  } else if (ctx.target === "draft-04") {
+    result.$schema = "http://json-schema.org/draft-04/schema#";
+  } else if (ctx.target === "openapi-3.0") ;
+  else ;
+  if ((_a2 = ctx.external) == null ? void 0 : _a2.uri) {
+    const id = (_b = ctx.external.registry.get(schema)) == null ? void 0 : _b.id;
+    if (!id)
+      throw new Error("Schema is missing an `id` property");
+    result.$id = ctx.external.uri(id);
+  }
+  Object.assign(result, root.def ?? root.schema);
+  const defs = ((_c = ctx.external) == null ? void 0 : _c.defs) ?? {};
+  for (const entry of ctx.seen.entries()) {
+    const seen = entry[1];
+    if (seen.def && seen.defId) {
+      defs[seen.defId] = seen.def;
+    }
+  }
+  if (ctx.external) ;
+  else {
+    if (Object.keys(defs).length > 0) {
+      if (ctx.target === "draft-2020-12") {
+        result.$defs = defs;
+      } else {
+        result.definitions = defs;
+      }
+    }
+  }
+  try {
+    const finalized = JSON.parse(JSON.stringify(result));
+    Object.defineProperty(finalized, "~standard", {
+      value: {
+        ...schema["~standard"],
+        jsonSchema: {
+          input: createStandardJSONSchemaMethod(schema, "input", ctx.processors),
+          output: createStandardJSONSchemaMethod(schema, "output", ctx.processors)
+        }
+      },
+      enumerable: false,
+      writable: false
+    });
+    return finalized;
+  } catch (_err) {
+    throw new Error("Error converting schema to JSON.");
+  }
+}
+function isTransforming(_schema, _ctx) {
+  const ctx = _ctx ?? { seen: /* @__PURE__ */ new Set() };
+  if (ctx.seen.has(_schema))
+    return false;
+  ctx.seen.add(_schema);
+  const def = _schema._zod.def;
+  if (def.type === "transform")
+    return true;
+  if (def.type === "array")
+    return isTransforming(def.element, ctx);
+  if (def.type === "set")
+    return isTransforming(def.valueType, ctx);
+  if (def.type === "lazy")
+    return isTransforming(def.getter(), ctx);
+  if (def.type === "promise" || def.type === "optional" || def.type === "nonoptional" || def.type === "nullable" || def.type === "readonly" || def.type === "default" || def.type === "prefault") {
+    return isTransforming(def.innerType, ctx);
+  }
+  if (def.type === "intersection") {
+    return isTransforming(def.left, ctx) || isTransforming(def.right, ctx);
+  }
+  if (def.type === "record" || def.type === "map") {
+    return isTransforming(def.keyType, ctx) || isTransforming(def.valueType, ctx);
+  }
+  if (def.type === "pipe") {
+    return isTransforming(def.in, ctx) || isTransforming(def.out, ctx);
+  }
+  if (def.type === "object") {
+    for (const key in def.shape) {
+      if (isTransforming(def.shape[key], ctx))
+        return true;
+    }
+    return false;
+  }
+  if (def.type === "union") {
+    for (const option of def.options) {
+      if (isTransforming(option, ctx))
+        return true;
+    }
+    return false;
+  }
+  if (def.type === "tuple") {
+    for (const item of def.items) {
+      if (isTransforming(item, ctx))
+        return true;
+    }
+    if (def.rest && isTransforming(def.rest, ctx))
+      return true;
+    return false;
+  }
+  return false;
+}
+const createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
+  const ctx = initializeContext({ ...params, processors });
+  process$1(schema, ctx);
+  extractDefs(ctx, schema);
+  return finalize(ctx, schema);
+};
+const createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
+  const { libraryOptions, target } = params ?? {};
+  const ctx = initializeContext({ ...libraryOptions ?? {}, target, io, processors });
+  process$1(schema, ctx);
+  extractDefs(ctx, schema);
+  return finalize(ctx, schema);
+};
+const formatMap = {
+  guid: "uuid",
+  url: "uri",
+  datetime: "date-time",
+  json_string: "json-string",
+  regex: ""
+  // do not set
+};
+const stringProcessor = (schema, ctx, _json, _params) => {
+  const json = _json;
+  json.type = "string";
+  const { minimum, maximum, format, patterns, contentEncoding } = schema._zod.bag;
+  if (typeof minimum === "number")
+    json.minLength = minimum;
+  if (typeof maximum === "number")
+    json.maxLength = maximum;
+  if (format) {
+    json.format = formatMap[format] ?? format;
+    if (json.format === "")
+      delete json.format;
+    if (format === "time") {
+      delete json.format;
+    }
+  }
+  if (contentEncoding)
+    json.contentEncoding = contentEncoding;
+  if (patterns && patterns.size > 0) {
+    const regexes = [...patterns];
+    if (regexes.length === 1)
+      json.pattern = regexes[0].source;
+    else if (regexes.length > 1) {
+      json.allOf = [
+        ...regexes.map((regex) => ({
+          ...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
+          pattern: regex.source
+        }))
+      ];
+    }
+  }
+};
+const numberProcessor = (schema, ctx, _json, _params) => {
+  const json = _json;
+  const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+  if (typeof format === "string" && format.includes("int"))
+    json.type = "integer";
+  else
+    json.type = "number";
+  if (typeof exclusiveMinimum === "number") {
+    if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
+      json.minimum = exclusiveMinimum;
+      json.exclusiveMinimum = true;
+    } else {
+      json.exclusiveMinimum = exclusiveMinimum;
+    }
+  }
+  if (typeof minimum === "number") {
+    json.minimum = minimum;
+    if (typeof exclusiveMinimum === "number" && ctx.target !== "draft-04") {
+      if (exclusiveMinimum >= minimum)
+        delete json.minimum;
+      else
+        delete json.exclusiveMinimum;
+    }
+  }
+  if (typeof exclusiveMaximum === "number") {
+    if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
+      json.maximum = exclusiveMaximum;
+      json.exclusiveMaximum = true;
+    } else {
+      json.exclusiveMaximum = exclusiveMaximum;
+    }
+  }
+  if (typeof maximum === "number") {
+    json.maximum = maximum;
+    if (typeof exclusiveMaximum === "number" && ctx.target !== "draft-04") {
+      if (exclusiveMaximum <= maximum)
+        delete json.maximum;
+      else
+        delete json.exclusiveMaximum;
+    }
+  }
+  if (typeof multipleOf === "number")
+    json.multipleOf = multipleOf;
+};
+const booleanProcessor = (_schema, _ctx, json, _params) => {
+  json.type = "boolean";
+};
+const neverProcessor = (_schema, _ctx, json, _params) => {
+  json.not = {};
+};
+const unknownProcessor = (_schema, _ctx, _json, _params) => {
+};
+const enumProcessor = (schema, _ctx, json, _params) => {
+  const def = schema._zod.def;
+  const values = getEnumValues(def.entries);
+  if (values.every((v) => typeof v === "number"))
+    json.type = "number";
+  if (values.every((v) => typeof v === "string"))
+    json.type = "string";
+  json.enum = values;
+};
+const customProcessor = (_schema, ctx, _json, _params) => {
+  if (ctx.unrepresentable === "throw") {
+    throw new Error("Custom types cannot be represented in JSON Schema");
+  }
+};
+const transformProcessor = (_schema, ctx, _json, _params) => {
+  if (ctx.unrepresentable === "throw") {
+    throw new Error("Transforms cannot be represented in JSON Schema");
+  }
+};
+const arrayProcessor = (schema, ctx, _json, params) => {
+  const json = _json;
+  const def = schema._zod.def;
+  const { minimum, maximum } = schema._zod.bag;
+  if (typeof minimum === "number")
+    json.minItems = minimum;
+  if (typeof maximum === "number")
+    json.maxItems = maximum;
+  json.type = "array";
+  json.items = process$1(def.element, ctx, { ...params, path: [...params.path, "items"] });
+};
+const objectProcessor = (schema, ctx, _json, params) => {
+  var _a2;
+  const json = _json;
+  const def = schema._zod.def;
+  json.type = "object";
+  json.properties = {};
+  const shape = def.shape;
+  for (const key in shape) {
+    json.properties[key] = process$1(shape[key], ctx, {
+      ...params,
+      path: [...params.path, "properties", key]
+    });
+  }
+  const allKeys = new Set(Object.keys(shape));
+  const requiredKeys = new Set([...allKeys].filter((key) => {
+    const v = def.shape[key]._zod;
+    if (ctx.io === "input") {
+      return v.optin === void 0;
+    } else {
+      return v.optout === void 0;
+    }
+  }));
+  if (requiredKeys.size > 0) {
+    json.required = Array.from(requiredKeys);
+  }
+  if (((_a2 = def.catchall) == null ? void 0 : _a2._zod.def.type) === "never") {
+    json.additionalProperties = false;
+  } else if (!def.catchall) {
+    if (ctx.io === "output")
+      json.additionalProperties = false;
+  } else if (def.catchall) {
+    json.additionalProperties = process$1(def.catchall, ctx, {
+      ...params,
+      path: [...params.path, "additionalProperties"]
+    });
+  }
+};
+const unionProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  const isExclusive = def.inclusive === false;
+  const options = def.options.map((x, i) => process$1(x, ctx, {
+    ...params,
+    path: [...params.path, isExclusive ? "oneOf" : "anyOf", i]
+  }));
+  if (isExclusive) {
+    json.oneOf = options;
+  } else {
+    json.anyOf = options;
+  }
+};
+const intersectionProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  const a = process$1(def.left, ctx, {
+    ...params,
+    path: [...params.path, "allOf", 0]
+  });
+  const b = process$1(def.right, ctx, {
+    ...params,
+    path: [...params.path, "allOf", 1]
+  });
+  const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
+  const allOf = [
+    ...isSimpleIntersection(a) ? a.allOf : [a],
+    ...isSimpleIntersection(b) ? b.allOf : [b]
+  ];
+  json.allOf = allOf;
+};
+const nullableProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  const inner = process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  if (ctx.target === "openapi-3.0") {
+    seen.ref = def.innerType;
+    json.nullable = true;
+  } else {
+    json.anyOf = [inner, { type: "null" }];
+  }
+};
+const nonoptionalProcessor = (schema, ctx, _json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+};
+const defaultProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+  json.default = JSON.parse(JSON.stringify(def.defaultValue));
+};
+const prefaultProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+  if (ctx.io === "input")
+    json._prefault = JSON.parse(JSON.stringify(def.defaultValue));
+};
+const catchProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+  let catchValue;
+  try {
+    catchValue = def.catchValue(void 0);
+  } catch {
+    throw new Error("Dynamic catch values are not supported in JSON Schema");
+  }
+  json.default = catchValue;
+};
+const pipeProcessor = (schema, ctx, _json, params) => {
+  const def = schema._zod.def;
+  const innerType = ctx.io === "input" ? def.in._zod.def.type === "transform" ? def.out : def.in : def.out;
+  process$1(innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = innerType;
+};
+const readonlyProcessor = (schema, ctx, json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+  json.readOnly = true;
+};
+const optionalProcessor = (schema, ctx, _json, params) => {
+  const def = schema._zod.def;
+  process$1(def.innerType, ctx, params);
+  const seen = ctx.seen.get(schema);
+  seen.ref = def.innerType;
+};
+const ZodISODateTime = /* @__PURE__ */ $constructor("ZodISODateTime", (inst, def) => {
+  $ZodISODateTime.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+function datetime(params) {
+  return /* @__PURE__ */ _isoDateTime(ZodISODateTime, params);
+}
+const ZodISODate = /* @__PURE__ */ $constructor("ZodISODate", (inst, def) => {
+  $ZodISODate.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+function date(params) {
+  return /* @__PURE__ */ _isoDate(ZodISODate, params);
+}
+const ZodISOTime = /* @__PURE__ */ $constructor("ZodISOTime", (inst, def) => {
+  $ZodISOTime.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+function time(params) {
+  return /* @__PURE__ */ _isoTime(ZodISOTime, params);
+}
+const ZodISODuration = /* @__PURE__ */ $constructor("ZodISODuration", (inst, def) => {
+  $ZodISODuration.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+function duration(params) {
+  return /* @__PURE__ */ _isoDuration(ZodISODuration, params);
+}
+const initializer = (inst, issues) => {
+  $ZodError.init(inst, issues);
+  inst.name = "ZodError";
+  Object.defineProperties(inst, {
+    format: {
+      value: (mapper) => formatError(inst, mapper)
+      // enumerable: false,
+    },
+    flatten: {
+      value: (mapper) => flattenError(inst, mapper)
+      // enumerable: false,
+    },
+    addIssue: {
+      value: (issue2) => {
+        inst.issues.push(issue2);
+        inst.message = JSON.stringify(inst.issues, jsonStringifyReplacer, 2);
+      }
+      // enumerable: false,
+    },
+    addIssues: {
+      value: (issues2) => {
+        inst.issues.push(...issues2);
+        inst.message = JSON.stringify(inst.issues, jsonStringifyReplacer, 2);
+      }
+      // enumerable: false,
+    },
+    isEmpty: {
+      get() {
+        return inst.issues.length === 0;
+      }
+      // enumerable: false,
+    }
+  });
+};
+const ZodRealError = $constructor("ZodError", initializer, {
+  Parent: Error
+});
+const parse = /* @__PURE__ */ _parse(ZodRealError);
+const parseAsync = /* @__PURE__ */ _parseAsync(ZodRealError);
+const safeParse = /* @__PURE__ */ _safeParse(ZodRealError);
+const safeParseAsync = /* @__PURE__ */ _safeParseAsync(ZodRealError);
+const encode = /* @__PURE__ */ _encode(ZodRealError);
+const decode = /* @__PURE__ */ _decode(ZodRealError);
+const encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
+const decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
+const safeEncode = /* @__PURE__ */ _safeEncode(ZodRealError);
+const safeDecode = /* @__PURE__ */ _safeDecode(ZodRealError);
+const safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
+const safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
+const ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
+  $ZodType.init(inst, def);
+  Object.assign(inst["~standard"], {
+    jsonSchema: {
+      input: createStandardJSONSchemaMethod(inst, "input"),
+      output: createStandardJSONSchemaMethod(inst, "output")
+    }
+  });
+  inst.toJSONSchema = createToJSONSchemaMethod(inst, {});
+  inst.def = def;
+  inst.type = def.type;
+  Object.defineProperty(inst, "_def", { value: def });
+  inst.check = (...checks) => {
+    return inst.clone(mergeDefs(def, {
+      checks: [
+        ...def.checks ?? [],
+        ...checks.map((ch) => typeof ch === "function" ? { _zod: { check: ch, def: { check: "custom" }, onattach: [] } } : ch)
+      ]
+    }), {
+      parent: true
+    });
+  };
+  inst.with = inst.check;
+  inst.clone = (def2, params) => clone(inst, def2, params);
+  inst.brand = () => inst;
+  inst.register = (reg, meta) => {
+    reg.add(inst, meta);
+    return inst;
+  };
+  inst.parse = (data, params) => parse(inst, data, params, { callee: inst.parse });
+  inst.safeParse = (data, params) => safeParse(inst, data, params);
+  inst.parseAsync = async (data, params) => parseAsync(inst, data, params, { callee: inst.parseAsync });
+  inst.safeParseAsync = async (data, params) => safeParseAsync(inst, data, params);
+  inst.spa = inst.safeParseAsync;
+  inst.encode = (data, params) => encode(inst, data, params);
+  inst.decode = (data, params) => decode(inst, data, params);
+  inst.encodeAsync = async (data, params) => encodeAsync(inst, data, params);
+  inst.decodeAsync = async (data, params) => decodeAsync(inst, data, params);
+  inst.safeEncode = (data, params) => safeEncode(inst, data, params);
+  inst.safeDecode = (data, params) => safeDecode(inst, data, params);
+  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync(inst, data, params);
+  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync(inst, data, params);
+  inst.refine = (check, params) => inst.check(refine(check, params));
+  inst.superRefine = (refinement) => inst.check(superRefine(refinement));
+  inst.overwrite = (fn) => inst.check(/* @__PURE__ */ _overwrite(fn));
+  inst.optional = () => optional(inst);
+  inst.exactOptional = () => exactOptional(inst);
+  inst.nullable = () => nullable(inst);
+  inst.nullish = () => optional(nullable(inst));
+  inst.nonoptional = (params) => nonoptional(inst, params);
+  inst.array = () => array(inst);
+  inst.or = (arg) => union([inst, arg]);
+  inst.and = (arg) => intersection(inst, arg);
+  inst.transform = (tx) => pipe(inst, transform(tx));
+  inst.default = (def2) => _default(inst, def2);
+  inst.prefault = (def2) => prefault(inst, def2);
+  inst.catch = (params) => _catch(inst, params);
+  inst.pipe = (target) => pipe(inst, target);
+  inst.readonly = () => readonly(inst);
+  inst.describe = (description) => {
+    const cl = inst.clone();
+    globalRegistry.add(cl, { description });
+    return cl;
+  };
+  Object.defineProperty(inst, "description", {
+    get() {
+      var _a2;
+      return (_a2 = globalRegistry.get(inst)) == null ? void 0 : _a2.description;
+    },
+    configurable: true
+  });
+  inst.meta = (...args) => {
+    if (args.length === 0) {
+      return globalRegistry.get(inst);
+    }
+    const cl = inst.clone();
+    globalRegistry.add(cl, args[0]);
+    return cl;
+  };
+  inst.isOptional = () => inst.safeParse(void 0).success;
+  inst.isNullable = () => inst.safeParse(null).success;
+  inst.apply = (fn) => fn(inst);
+  return inst;
+});
+const _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
+  $ZodString.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => stringProcessor(inst, ctx, json);
+  const bag = inst._zod.bag;
+  inst.format = bag.format ?? null;
+  inst.minLength = bag.minimum ?? null;
+  inst.maxLength = bag.maximum ?? null;
+  inst.regex = (...args) => inst.check(/* @__PURE__ */ _regex(...args));
+  inst.includes = (...args) => inst.check(/* @__PURE__ */ _includes(...args));
+  inst.startsWith = (...args) => inst.check(/* @__PURE__ */ _startsWith(...args));
+  inst.endsWith = (...args) => inst.check(/* @__PURE__ */ _endsWith(...args));
+  inst.min = (...args) => inst.check(/* @__PURE__ */ _minLength(...args));
+  inst.max = (...args) => inst.check(/* @__PURE__ */ _maxLength(...args));
+  inst.length = (...args) => inst.check(/* @__PURE__ */ _length(...args));
+  inst.nonempty = (...args) => inst.check(/* @__PURE__ */ _minLength(1, ...args));
+  inst.lowercase = (params) => inst.check(/* @__PURE__ */ _lowercase(params));
+  inst.uppercase = (params) => inst.check(/* @__PURE__ */ _uppercase(params));
+  inst.trim = () => inst.check(/* @__PURE__ */ _trim());
+  inst.normalize = (...args) => inst.check(/* @__PURE__ */ _normalize(...args));
+  inst.toLowerCase = () => inst.check(/* @__PURE__ */ _toLowerCase());
+  inst.toUpperCase = () => inst.check(/* @__PURE__ */ _toUpperCase());
+  inst.slugify = () => inst.check(/* @__PURE__ */ _slugify());
+});
+const ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
+  $ZodString.init(inst, def);
+  _ZodString.init(inst, def);
+  inst.email = (params) => inst.check(/* @__PURE__ */ _email(ZodEmail, params));
+  inst.url = (params) => inst.check(/* @__PURE__ */ _url(ZodURL, params));
+  inst.jwt = (params) => inst.check(/* @__PURE__ */ _jwt(ZodJWT, params));
+  inst.emoji = (params) => inst.check(/* @__PURE__ */ _emoji(ZodEmoji, params));
+  inst.guid = (params) => inst.check(/* @__PURE__ */ _guid(ZodGUID, params));
+  inst.uuid = (params) => inst.check(/* @__PURE__ */ _uuid(ZodUUID, params));
+  inst.uuidv4 = (params) => inst.check(/* @__PURE__ */ _uuidv4(ZodUUID, params));
+  inst.uuidv6 = (params) => inst.check(/* @__PURE__ */ _uuidv6(ZodUUID, params));
+  inst.uuidv7 = (params) => inst.check(/* @__PURE__ */ _uuidv7(ZodUUID, params));
+  inst.nanoid = (params) => inst.check(/* @__PURE__ */ _nanoid(ZodNanoID, params));
+  inst.guid = (params) => inst.check(/* @__PURE__ */ _guid(ZodGUID, params));
+  inst.cuid = (params) => inst.check(/* @__PURE__ */ _cuid(ZodCUID, params));
+  inst.cuid2 = (params) => inst.check(/* @__PURE__ */ _cuid2(ZodCUID2, params));
+  inst.ulid = (params) => inst.check(/* @__PURE__ */ _ulid(ZodULID, params));
+  inst.base64 = (params) => inst.check(/* @__PURE__ */ _base64(ZodBase64, params));
+  inst.base64url = (params) => inst.check(/* @__PURE__ */ _base64url(ZodBase64URL, params));
+  inst.xid = (params) => inst.check(/* @__PURE__ */ _xid(ZodXID, params));
+  inst.ksuid = (params) => inst.check(/* @__PURE__ */ _ksuid(ZodKSUID, params));
+  inst.ipv4 = (params) => inst.check(/* @__PURE__ */ _ipv4(ZodIPv4, params));
+  inst.ipv6 = (params) => inst.check(/* @__PURE__ */ _ipv6(ZodIPv6, params));
+  inst.cidrv4 = (params) => inst.check(/* @__PURE__ */ _cidrv4(ZodCIDRv4, params));
+  inst.cidrv6 = (params) => inst.check(/* @__PURE__ */ _cidrv6(ZodCIDRv6, params));
+  inst.e164 = (params) => inst.check(/* @__PURE__ */ _e164(ZodE164, params));
+  inst.datetime = (params) => inst.check(datetime(params));
+  inst.date = (params) => inst.check(date(params));
+  inst.time = (params) => inst.check(time(params));
+  inst.duration = (params) => inst.check(duration(params));
+});
+function string(params) {
+  return /* @__PURE__ */ _string(ZodString, params);
+}
+const ZodStringFormat = /* @__PURE__ */ $constructor("ZodStringFormat", (inst, def) => {
+  $ZodStringFormat.init(inst, def);
+  _ZodString.init(inst, def);
+});
+const ZodEmail = /* @__PURE__ */ $constructor("ZodEmail", (inst, def) => {
+  $ZodEmail.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodGUID = /* @__PURE__ */ $constructor("ZodGUID", (inst, def) => {
+  $ZodGUID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodUUID = /* @__PURE__ */ $constructor("ZodUUID", (inst, def) => {
+  $ZodUUID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodURL = /* @__PURE__ */ $constructor("ZodURL", (inst, def) => {
+  $ZodURL.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodEmoji = /* @__PURE__ */ $constructor("ZodEmoji", (inst, def) => {
+  $ZodEmoji.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodNanoID = /* @__PURE__ */ $constructor("ZodNanoID", (inst, def) => {
+  $ZodNanoID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodCUID = /* @__PURE__ */ $constructor("ZodCUID", (inst, def) => {
+  $ZodCUID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodCUID2 = /* @__PURE__ */ $constructor("ZodCUID2", (inst, def) => {
+  $ZodCUID2.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodULID = /* @__PURE__ */ $constructor("ZodULID", (inst, def) => {
+  $ZodULID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodXID = /* @__PURE__ */ $constructor("ZodXID", (inst, def) => {
+  $ZodXID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodKSUID = /* @__PURE__ */ $constructor("ZodKSUID", (inst, def) => {
+  $ZodKSUID.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodIPv4 = /* @__PURE__ */ $constructor("ZodIPv4", (inst, def) => {
+  $ZodIPv4.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodIPv6 = /* @__PURE__ */ $constructor("ZodIPv6", (inst, def) => {
+  $ZodIPv6.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodCIDRv4 = /* @__PURE__ */ $constructor("ZodCIDRv4", (inst, def) => {
+  $ZodCIDRv4.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodCIDRv6 = /* @__PURE__ */ $constructor("ZodCIDRv6", (inst, def) => {
+  $ZodCIDRv6.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodBase64 = /* @__PURE__ */ $constructor("ZodBase64", (inst, def) => {
+  $ZodBase64.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodBase64URL = /* @__PURE__ */ $constructor("ZodBase64URL", (inst, def) => {
+  $ZodBase64URL.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodE164 = /* @__PURE__ */ $constructor("ZodE164", (inst, def) => {
+  $ZodE164.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
+  $ZodJWT.init(inst, def);
+  ZodStringFormat.init(inst, def);
+});
+const ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
+  $ZodNumber.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json);
+  inst.gt = (value, params) => inst.check(/* @__PURE__ */ _gt(value, params));
+  inst.gte = (value, params) => inst.check(/* @__PURE__ */ _gte(value, params));
+  inst.min = (value, params) => inst.check(/* @__PURE__ */ _gte(value, params));
+  inst.lt = (value, params) => inst.check(/* @__PURE__ */ _lt(value, params));
+  inst.lte = (value, params) => inst.check(/* @__PURE__ */ _lte(value, params));
+  inst.max = (value, params) => inst.check(/* @__PURE__ */ _lte(value, params));
+  inst.int = (params) => inst.check(int(params));
+  inst.safe = (params) => inst.check(int(params));
+  inst.positive = (params) => inst.check(/* @__PURE__ */ _gt(0, params));
+  inst.nonnegative = (params) => inst.check(/* @__PURE__ */ _gte(0, params));
+  inst.negative = (params) => inst.check(/* @__PURE__ */ _lt(0, params));
+  inst.nonpositive = (params) => inst.check(/* @__PURE__ */ _lte(0, params));
+  inst.multipleOf = (value, params) => inst.check(/* @__PURE__ */ _multipleOf(value, params));
+  inst.step = (value, params) => inst.check(/* @__PURE__ */ _multipleOf(value, params));
+  inst.finite = () => inst;
+  const bag = inst._zod.bag;
+  inst.minValue = Math.max(bag.minimum ?? Number.NEGATIVE_INFINITY, bag.exclusiveMinimum ?? Number.NEGATIVE_INFINITY) ?? null;
+  inst.maxValue = Math.min(bag.maximum ?? Number.POSITIVE_INFINITY, bag.exclusiveMaximum ?? Number.POSITIVE_INFINITY) ?? null;
+  inst.isInt = (bag.format ?? "").includes("int") || Number.isSafeInteger(bag.multipleOf ?? 0.5);
+  inst.isFinite = true;
+  inst.format = bag.format ?? null;
+});
+function number(params) {
+  return /* @__PURE__ */ _number(ZodNumber, params);
+}
+const ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
+  $ZodNumberFormat.init(inst, def);
+  ZodNumber.init(inst, def);
+});
+function int(params) {
+  return /* @__PURE__ */ _int(ZodNumberFormat, params);
+}
+const ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
+  $ZodBoolean.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json);
+});
+function boolean(params) {
+  return /* @__PURE__ */ _boolean(ZodBoolean, params);
+}
+const ZodUnknown = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
+  $ZodUnknown.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => unknownProcessor();
+});
+function unknown() {
+  return /* @__PURE__ */ _unknown(ZodUnknown);
+}
+const ZodNever = /* @__PURE__ */ $constructor("ZodNever", (inst, def) => {
+  $ZodNever.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => neverProcessor(inst, ctx, json);
+});
+function never(params) {
+  return /* @__PURE__ */ _never(ZodNever, params);
+}
+const ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
+  $ZodArray.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => arrayProcessor(inst, ctx, json, params);
+  inst.element = def.element;
+  inst.min = (minLength, params) => inst.check(/* @__PURE__ */ _minLength(minLength, params));
+  inst.nonempty = (params) => inst.check(/* @__PURE__ */ _minLength(1, params));
+  inst.max = (maxLength, params) => inst.check(/* @__PURE__ */ _maxLength(maxLength, params));
+  inst.length = (len, params) => inst.check(/* @__PURE__ */ _length(len, params));
+  inst.unwrap = () => inst.element;
+});
+function array(element, params) {
+  return /* @__PURE__ */ _array(ZodArray, element, params);
+}
+const ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
+  $ZodObjectJIT.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => objectProcessor(inst, ctx, json, params);
+  defineLazy(inst, "shape", () => {
+    return def.shape;
+  });
+  inst.keyof = () => _enum(Object.keys(inst._zod.def.shape));
+  inst.catchall = (catchall) => inst.clone({ ...inst._zod.def, catchall });
+  inst.passthrough = () => inst.clone({ ...inst._zod.def, catchall: unknown() });
+  inst.loose = () => inst.clone({ ...inst._zod.def, catchall: unknown() });
+  inst.strict = () => inst.clone({ ...inst._zod.def, catchall: never() });
+  inst.strip = () => inst.clone({ ...inst._zod.def, catchall: void 0 });
+  inst.extend = (incoming) => {
+    return extend(inst, incoming);
+  };
+  inst.safeExtend = (incoming) => {
+    return safeExtend(inst, incoming);
+  };
+  inst.merge = (other) => merge(inst, other);
+  inst.pick = (mask) => pick(inst, mask);
+  inst.omit = (mask) => omit(inst, mask);
+  inst.partial = (...args) => partial(ZodOptional, inst, args[0]);
+  inst.required = (...args) => required(ZodNonOptional, inst, args[0]);
+});
+function object(shape, params) {
+  const def = {
+    type: "object",
+    shape: shape ?? {},
+    ...normalizeParams(params)
+  };
+  return new ZodObject(def);
+}
+const ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
+  $ZodUnion.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => unionProcessor(inst, ctx, json, params);
+  inst.options = def.options;
+});
+function union(options, params) {
+  return new ZodUnion({
+    type: "union",
+    options,
+    ...normalizeParams(params)
+  });
+}
+const ZodIntersection = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
+  $ZodIntersection.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => intersectionProcessor(inst, ctx, json, params);
+});
+function intersection(left, right) {
+  return new ZodIntersection({
+    type: "intersection",
+    left,
+    right
+  });
+}
+const ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
+  $ZodEnum.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => enumProcessor(inst, ctx, json);
+  inst.enum = def.entries;
+  inst.options = Object.values(def.entries);
+  const keys = new Set(Object.keys(def.entries));
+  inst.extract = (values, params) => {
+    const newEntries = {};
+    for (const value of values) {
+      if (keys.has(value)) {
+        newEntries[value] = def.entries[value];
+      } else
+        throw new Error(`Key ${value} not found in enum`);
+    }
+    return new ZodEnum({
+      ...def,
+      checks: [],
+      ...normalizeParams(params),
+      entries: newEntries
+    });
+  };
+  inst.exclude = (values, params) => {
+    const newEntries = { ...def.entries };
+    for (const value of values) {
+      if (keys.has(value)) {
+        delete newEntries[value];
+      } else
+        throw new Error(`Key ${value} not found in enum`);
+    }
+    return new ZodEnum({
+      ...def,
+      checks: [],
+      ...normalizeParams(params),
+      entries: newEntries
+    });
+  };
+});
+function _enum(values, params) {
+  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  return new ZodEnum({
+    type: "enum",
+    entries,
+    ...normalizeParams(params)
+  });
+}
+function nativeEnum(entries, params) {
+  return new ZodEnum({
+    type: "enum",
+    entries,
+    ...normalizeParams(params)
+  });
+}
+const ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) => {
+  $ZodTransform.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => transformProcessor(inst, ctx);
+  inst._zod.parse = (payload, _ctx) => {
+    if (_ctx.direction === "backward") {
+      throw new $ZodEncodeError(inst.constructor.name);
+    }
+    payload.addIssue = (issue$1) => {
+      if (typeof issue$1 === "string") {
+        payload.issues.push(issue(issue$1, payload.value, def));
+      } else {
+        const _issue = issue$1;
+        if (_issue.fatal)
+          _issue.continue = false;
+        _issue.code ?? (_issue.code = "custom");
+        _issue.input ?? (_issue.input = payload.value);
+        _issue.inst ?? (_issue.inst = inst);
+        payload.issues.push(issue(_issue));
+      }
+    };
+    const output = def.transform(payload.value, payload);
+    if (output instanceof Promise) {
+      return output.then((output2) => {
+        payload.value = output2;
+        return payload;
+      });
+    }
+    payload.value = output;
+    return payload;
+  };
+});
+function transform(fn) {
+  return new ZodTransform({
+    type: "transform",
+    transform: fn
+  });
+}
+const ZodOptional = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
+  $ZodOptional.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function optional(innerType) {
+  return new ZodOptional({
+    type: "optional",
+    innerType
+  });
+}
+const ZodExactOptional = /* @__PURE__ */ $constructor("ZodExactOptional", (inst, def) => {
+  $ZodExactOptional.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function exactOptional(innerType) {
+  return new ZodExactOptional({
+    type: "optional",
+    innerType
+  });
+}
+const ZodNullable = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
+  $ZodNullable.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => nullableProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function nullable(innerType) {
+  return new ZodNullable({
+    type: "nullable",
+    innerType
+  });
+}
+const ZodDefault = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
+  $ZodDefault.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => defaultProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+  inst.removeDefault = inst.unwrap;
+});
+function _default(innerType, defaultValue) {
+  return new ZodDefault({
+    type: "default",
+    innerType,
+    get defaultValue() {
+      return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+    }
+  });
+}
+const ZodPrefault = /* @__PURE__ */ $constructor("ZodPrefault", (inst, def) => {
+  $ZodPrefault.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => prefaultProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function prefault(innerType, defaultValue) {
+  return new ZodPrefault({
+    type: "prefault",
+    innerType,
+    get defaultValue() {
+      return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+    }
+  });
+}
+const ZodNonOptional = /* @__PURE__ */ $constructor("ZodNonOptional", (inst, def) => {
+  $ZodNonOptional.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => nonoptionalProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function nonoptional(innerType, params) {
+  return new ZodNonOptional({
+    type: "nonoptional",
+    innerType,
+    ...normalizeParams(params)
+  });
+}
+const ZodCatch = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
+  $ZodCatch.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => catchProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+  inst.removeCatch = inst.unwrap;
+});
+function _catch(innerType, catchValue) {
+  return new ZodCatch({
+    type: "catch",
+    innerType,
+    catchValue: typeof catchValue === "function" ? catchValue : () => catchValue
+  });
+}
+const ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
+  $ZodPipe.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => pipeProcessor(inst, ctx, json, params);
+  inst.in = def.in;
+  inst.out = def.out;
+});
+function pipe(in_, out) {
+  return new ZodPipe({
+    type: "pipe",
+    in: in_,
+    out
+    // ...util.normalizeParams(params),
+  });
+}
+const ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
+  $ZodReadonly.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => readonlyProcessor(inst, ctx, json, params);
+  inst.unwrap = () => inst._zod.def.innerType;
+});
+function readonly(innerType) {
+  return new ZodReadonly({
+    type: "readonly",
+    innerType
+  });
+}
+const ZodCustom = /* @__PURE__ */ $constructor("ZodCustom", (inst, def) => {
+  $ZodCustom.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => customProcessor(inst, ctx);
+});
+function refine(fn, _params = {}) {
+  return /* @__PURE__ */ _refine(ZodCustom, fn, _params);
+}
+function superRefine(fn) {
+  return /* @__PURE__ */ _superRefine(fn);
+}
+var CustomerCategory = /* @__PURE__ */ ((CustomerCategory2) => {
+  CustomerCategory2["PERSONAL"] = "PERSONAL";
+  CustomerCategory2["COMPANY"] = "COMPANY";
+  return CustomerCategory2;
+})(CustomerCategory || {});
+const CustomerCreateSchema = object({
+  name: string().min(1, "Nama customer wajib diisi").max(255, "Nama customer maksimal 255 karakter"),
+  category: nativeEnum(CustomerCategory, {
+    message: "Kategori customer harus PERSONAL atau COMPANY"
+  })
+});
+const CustomerUpdateSchema = object({
+  id: number().int().positive("ID customer harus valid"),
+  name: string().min(1, "Nama customer wajib diisi").max(255, "Nama customer maksimal 255 karakter").optional(),
+  category: nativeEnum(CustomerCategory, {
+    message: "Kategori customer harus PERSONAL atau COMPANY"
+  }).optional(),
+  is_active: boolean().optional()
+});
+object({
+  name: string().optional(),
+  category: nativeEnum(CustomerCategory).optional(),
+  is_active: boolean().optional(),
+  page: number().int().positive().default(1),
+  limit: number().int().positive().max(100).default(20)
+});
+const VehicleCreateSchema = object({
+  plate_number: string().min(1, "Nomor plat wajib diisi").max(20, "Nomor plat maksimal 20 karakter"),
+  customer_id: number().int().positive("ID customer harus valid")
+});
+const VehicleUpdateSchema = object({
+  id: number().int().positive("ID kendaraan harus valid"),
+  plate_number: string().min(1, "Nomor plat wajib diisi").max(20, "Nomor plat maksimal 20 karakter").optional(),
+  customer_id: number().int().positive("ID customer harus valid").optional(),
+  is_active: boolean().optional()
+});
+object({
+  plate_number: string().optional(),
+  customer_id: number().int().positive().optional(),
+  is_active: boolean().optional(),
+  page: number().int().positive().default(1),
+  limit: number().int().positive().max(100).default(20)
+});
+class CustomerManager {
+  constructor(db) {
+    __publicField(this, "db");
+    this.db = db;
+  }
+  /**
+   * Get all customers with optional filters and pagination
+   */
+  getAll(filters = {}) {
+    const { name, category, is_active, page = 1, limit = 20 } = filters;
+    let query = "SELECT * FROM customers WHERE 1=1";
+    const params = [];
+    if (name) {
+      query += " AND name LIKE ?";
+      params.push(`%${name}%`);
+    }
+    if (category) {
+      query += " AND category = ?";
+      params.push(category);
+    }
+    if (is_active !== void 0) {
+      query += " AND is_active = ?";
+      params.push(is_active ? 1 : 0);
+    }
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    const offset = (page - 1) * limit;
+    params.push(limit, offset);
+    const customers = this.db.prepare(query).all(...params);
+    let countQuery = "SELECT COUNT(*) as total FROM customers WHERE 1=1";
+    const countParams = [];
+    if (name) {
+      countQuery += " AND name LIKE ?";
+      countParams.push(`%${name}%`);
+    }
+    if (category) {
+      countQuery += " AND category = ?";
+      countParams.push(category);
+    }
+    if (is_active !== void 0) {
+      countQuery += " AND is_active = ?";
+      countParams.push(is_active ? 1 : 0);
+    }
+    const countResult = this.db.prepare(countQuery).get(...countParams);
+    const total = countResult.total;
+    return {
+      customers: customers.map((c) => {
+        const customer = c;
+        return {
+          id: customer.id,
+          name: customer.name,
+          category: customer.category,
+          is_active: Boolean(customer.is_active),
+          created_at: customer.created_at
+        };
+      }),
+      total,
+      page,
+      limit
+    };
+  }
+  /**
+   * Get customer by ID
+   */
+  getById(id) {
+    const customer = this.db.prepare("SELECT * FROM customers WHERE id = ?").get(id);
+    if (!customer) return null;
+    return {
+      id: customer.id,
+      name: customer.name,
+      category: customer.category,
+      is_active: Boolean(customer.is_active),
+      created_at: customer.created_at
+    };
+  }
+  /**
+   * Create new customer
+   */
+  create(data) {
+    const validated = CustomerCreateSchema.parse(data);
+    const result = this.db.prepare(
+      "INSERT INTO customers (name, category, is_active) VALUES (?, ?, 1)"
+    ).run(validated.name, validated.category);
+    return this.getById(result.lastInsertRowid);
+  }
+  /**
+   * Update existing customer
+   */
+  update(id, data) {
+    const validated = CustomerUpdateSchema.parse({ id, ...data });
+    const updates = [];
+    const params = [];
+    if (validated.name !== void 0) {
+      updates.push("name = ?");
+      params.push(validated.name);
+    }
+    if (validated.category !== void 0) {
+      updates.push("category = ?");
+      params.push(validated.category);
+    }
+    if (validated.is_active !== void 0) {
+      updates.push("is_active = ?");
+      params.push(validated.is_active ? 1 : 0);
+    }
+    if (updates.length === 0) {
+      return this.getById(id);
+    }
+    params.push(id);
+    const query = `UPDATE customers SET ${updates.join(", ")} WHERE id = ?`;
+    this.db.prepare(query).run(...params);
+    return this.getById(id);
+  }
+  /**
+   * Delete customer (soft delete)
+   */
+  delete(id) {
+    const result = this.db.prepare("UPDATE customers SET is_active = 0 WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+  /**
+   * Search customers by name
+   */
+  search(query) {
+    const customers = this.db.prepare("SELECT * FROM customers WHERE name LIKE ? AND is_active = 1").all(`%${query}%`);
+    return customers.map((c) => {
+      const customer = c;
+      return {
+        id: customer.id,
+        name: customer.name,
+        category: customer.category,
+        is_active: Boolean(customer.is_active),
+        created_at: customer.created_at
+      };
+    });
+  }
+  /**
+   * Get active customers only
+   */
+  getActive() {
+    const customers = this.db.prepare("SELECT * FROM customers WHERE is_active = 1 ORDER BY name").all();
+    return customers.map((c) => {
+      const customer = c;
+      return {
+        id: customer.id,
+        name: customer.name,
+        category: customer.category,
+        is_active: Boolean(customer.is_active),
+        created_at: customer.created_at
+      };
+    });
+  }
+}
+class VehicleManager {
+  constructor(db) {
+    __publicField(this, "db");
+    this.db = db;
+  }
+  /**
+   * Get all vehicles with optional filters and pagination
+   */
+  getAll(filters = {}) {
+    const {
+      plate_number,
+      customer_id,
+      is_active,
+      page = 1,
+      limit = 20
+    } = filters;
+    let query = `
+      SELECT v.*, c.name as customer_name, c.category as customer_category
+      FROM vehicles v
+      LEFT JOIN customers c ON v.customer_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (plate_number) {
+      query += " AND v.plate_number LIKE ?";
+      params.push(`%${plate_number}%`);
+    }
+    if (customer_id) {
+      query += " AND v.customer_id = ?";
+      params.push(customer_id);
+    }
+    if (is_active !== void 0) {
+      query += " AND v.is_active = ?";
+      params.push(is_active ? 1 : 0);
+    }
+    query += " ORDER BY v.created_at DESC LIMIT ? OFFSET ?";
+    const offset = (page - 1) * limit;
+    params.push(limit, offset);
+    const vehicles = this.db.prepare(query).all(...params);
+    let countQuery = "SELECT COUNT(*) as total FROM vehicles WHERE 1=1";
+    const countParams = [];
+    if (plate_number) {
+      countQuery += " AND plate_number LIKE ?";
+      countParams.push(`%${plate_number}%`);
+    }
+    if (customer_id) {
+      countQuery += " AND customer_id = ?";
+      countParams.push(customer_id);
+    }
+    if (is_active !== void 0) {
+      countQuery += " AND is_active = ?";
+      countParams.push(is_active ? 1 : 0);
+    }
+    const countResult = this.db.prepare(countQuery).get(...countParams);
+    const total = countResult.total;
+    return {
+      vehicles: vehicles.map((v) => {
+        const vehicle = v;
+        return {
+          id: vehicle.id,
+          plate_number: vehicle.plate_number,
+          customer_id: vehicle.customer_id,
+          customer_name: vehicle.customer_name,
+          customer_category: vehicle.customer_category,
+          is_active: Boolean(vehicle.is_active),
+          created_at: vehicle.created_at
+        };
+      }),
+      total,
+      page,
+      limit
+    };
+  }
+  /**
+   * Get vehicle by ID
+   */
+  getById(id) {
+    const vehicle = this.db.prepare(
+      `
+          SELECT v.*, c.name as customer_name, c.category as customer_category
+          FROM vehicles v
+          LEFT JOIN customers c ON v.customer_id = c.id
+          WHERE v.id = ?
+        `
+    ).get(id);
+    if (!vehicle) return null;
+    return {
+      id: vehicle.id,
+      plate_number: vehicle.plate_number,
+      customer_id: vehicle.customer_id,
+      customer_name: vehicle.customer_name,
+      customer_category: vehicle.customer_category,
+      is_active: Boolean(vehicle.is_active),
+      created_at: vehicle.created_at
+    };
+  }
+  /**
+   * Create new vehicle
+   */
+  create(data) {
+    const validated = VehicleCreateSchema.parse(data);
+    const result = this.db.prepare(
+      "INSERT INTO vehicles (plate_number, customer_id, is_active) VALUES (?, ?, 1)"
+    ).run(validated.plate_number, validated.customer_id);
+    return this.getById(result.lastInsertRowid);
+  }
+  /**
+   * Update existing vehicle
+   */
+  update(id, data) {
+    const validated = VehicleUpdateSchema.parse({ id, ...data });
+    const updates = [];
+    const params = [];
+    if (validated.plate_number !== void 0) {
+      updates.push("plate_number = ?");
+      params.push(validated.plate_number);
+    }
+    if (validated.customer_id !== void 0) {
+      updates.push("customer_id = ?");
+      params.push(validated.customer_id);
+    }
+    if (validated.is_active !== void 0) {
+      updates.push("is_active = ?");
+      params.push(validated.is_active ? 1 : 0);
+    }
+    if (updates.length === 0) {
+      return this.getById(id);
+    }
+    params.push(id);
+    const query = `UPDATE vehicles SET ${updates.join(", ")} WHERE id = ?`;
+    this.db.prepare(query).run(...params);
+    return this.getById(id);
+  }
+  /**
+   * Delete vehicle (soft delete)
+   */
+  delete(id) {
+    const result = this.db.prepare("UPDATE vehicles SET is_active = 0 WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+  /**
+   * Search vehicles by plate number
+   */
+  search(query) {
+    const vehicles = this.db.prepare(
+      `
+          SELECT v.*, c.name as customer_name, c.category as customer_category
+          FROM vehicles v
+          LEFT JOIN customers c ON v.customer_id = c.id
+          WHERE v.plate_number LIKE ? AND v.is_active = 1
+        `
+    ).all(`%${query}%`);
+    return vehicles.map((v) => {
+      const vehicle = v;
+      return {
+        id: vehicle.id,
+        plate_number: vehicle.plate_number,
+        customer_id: vehicle.customer_id,
+        customer_name: vehicle.customer_name,
+        customer_category: vehicle.customer_category,
+        is_active: Boolean(vehicle.is_active),
+        created_at: vehicle.created_at
+      };
+    });
+  }
+  /**
+   * Get vehicles by customer ID
+   */
+  getByCustomerId(customerId) {
+    const vehicles = this.db.prepare(
+      `
+          SELECT v.*, c.name as customer_name, c.category as customer_category
+          FROM vehicles v
+          LEFT JOIN customers c ON v.customer_id = c.id
+          WHERE v.customer_id = ? AND v.is_active = 1
+          ORDER BY v.plate_number
+        `
+    ).all(customerId);
+    return vehicles.map((v) => {
+      const vehicle = v;
+      return {
+        id: vehicle.id,
+        plate_number: vehicle.plate_number,
+        customer_id: vehicle.customer_id,
+        customer_name: vehicle.customer_name,
+        customer_category: vehicle.customer_category,
+        is_active: Boolean(vehicle.is_active),
+        created_at: vehicle.created_at
+      };
+    });
+  }
+  /**
+   * Get active vehicles only
+   */
+  getActive() {
+    const vehicles = this.db.prepare(
+      `
+          SELECT v.*, c.name as customer_name, c.category as customer_category
+          FROM vehicles v
+          LEFT JOIN customers c ON v.customer_id = c.id
+          WHERE v.is_active = 1
+          ORDER BY v.plate_number
+        `
+    ).all();
+    return vehicles.map((v) => {
+      const vehicle = v;
+      return {
+        id: vehicle.id,
+        plate_number: vehicle.plate_number,
+        customer_id: vehicle.customer_id,
+        customer_name: vehicle.customer_name,
+        customer_category: vehicle.customer_category,
+        is_active: Boolean(vehicle.is_active),
+        created_at: vehicle.created_at
+      };
+    });
+  }
+  /**
+   * Check if plate number exists
+   */
+  plateNumberExists(plateNumber, excludeId) {
+    let query = "SELECT id FROM vehicles WHERE plate_number = ?";
+    const params = [plateNumber];
+    if (excludeId) {
+      query += " AND id != ?";
+      params.push(excludeId);
+    }
+    const result = this.db.prepare(query).get(...params);
+    return result !== void 0;
+  }
+}
+class TransactionManager {
+  constructor(db) {
+    __publicField(this, "db");
+    this.db = db;
+  }
+  /**
+   * Get all transactions with optional filters and pagination
+   */
+  getAllTransactions(filters = {}) {
+    const {
+      status,
+      paymentStatus,
+      customerId,
+      vehicleId,
+      dateFrom,
+      dateTo,
+      page = 1,
+      limit = 20
+    } = filters;
+    let query = `
+      SELECT 
+        t.id,
+        t.invoice_number as invoiceNumber,
+        t.transaction_type_id as transactionTypeId,
+        tt.name as transactionTypeName,
+        t.customer_id as customerId,
+        c.name as customerName,
+        t.vehicle_id as vehicleId,
+        v.plate_number as vehiclePlate,
+        t.total_amount as totalAmount,
+        t.payment_status as paymentStatus,
+        t.transaction_status as transactionStatus,
+        t.created_by as createdBy,
+        u.first_name || ' ' || u.last_name as createdByName,
+        t.notes,
+        t.created_at as createdAt,
+        t.updated_at as updatedAt
+      FROM transactions t
+      LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+      LEFT JOIN customers c ON t.customer_id = c.id
+      LEFT JOIN vehicles v ON t.vehicle_id = v.id
+      LEFT JOIN users u ON t.created_by = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (status) {
+      query += " AND t.transaction_status = ?";
+      params.push(status);
+    }
+    if (paymentStatus) {
+      query += " AND t.payment_status = ?";
+      params.push(paymentStatus);
+    }
+    if (customerId) {
+      query += " AND t.customer_id = ?";
+      params.push(customerId);
+    }
+    if (vehicleId) {
+      query += " AND t.vehicle_id = ?";
+      params.push(vehicleId);
+    }
+    if (dateFrom) {
+      query += " AND DATE(t.created_at) >= ?";
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      query += " AND DATE(t.created_at) <= ?";
+      params.push(dateTo);
+    }
+    query += " ORDER BY t.created_at DESC LIMIT ? OFFSET ?";
+    const offset = (page - 1) * limit;
+    params.push(limit, offset);
+    const transactions = this.db.prepare(query).all(...params);
+    let countQuery = `
+      SELECT COUNT(*) as total FROM transactions t
+      WHERE 1=1
+    `;
+    const countParams = [];
+    if (status) {
+      countQuery += " AND t.transaction_status = ?";
+      countParams.push(status);
+    }
+    if (paymentStatus) {
+      countQuery += " AND t.payment_status = ?";
+      countParams.push(paymentStatus);
+    }
+    if (customerId) {
+      countQuery += " AND t.customer_id = ?";
+      countParams.push(customerId);
+    }
+    if (vehicleId) {
+      countQuery += " AND t.vehicle_id = ?";
+      countParams.push(vehicleId);
+    }
+    if (dateFrom) {
+      countQuery += " AND DATE(t.created_at) >= ?";
+      countParams.push(dateFrom);
+    }
+    if (dateTo) {
+      countQuery += " AND DATE(t.created_at) <= ?";
+      countParams.push(dateTo);
+    }
+    const countResult = this.db.prepare(countQuery).get(...countParams);
+    const total = countResult.total;
+    return {
+      transactions,
+      total,
+      page,
+      limit
+    };
+  }
+  /**
+   * Get transaction by ID with items
+   */
+  getTransactionById(id) {
+    const transaction = this.db.prepare(
+      `
+        SELECT 
+          t.id,
+          t.invoice_number as invoiceNumber,
+          t.transaction_type_id as transactionTypeId,
+          tt.name as transactionTypeName,
+          t.customer_id as customerId,
+          c.name as customerName,
+          t.vehicle_id as vehicleId,
+          v.plate_number as vehiclePlate,
+          t.total_amount as totalAmount,
+          t.payment_status as paymentStatus,
+          t.transaction_status as transactionStatus,
+          t.created_by as createdBy,
+          u.first_name || ' ' || u.last_name as createdByName,
+          t.notes,
+          t.created_at as createdAt,
+          t.updated_at as updatedAt
+        FROM transactions t
+        LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+        LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vehicles v ON t.vehicle_id = v.id
+        LEFT JOIN users u ON t.created_by = u.id
+        WHERE t.id = ?
+      `
+    ).get(id);
+    if (!transaction) return null;
+    const items = this.db.prepare(
+      `
+        SELECT 
+          ti.id,
+          ti.transaction_id as transactionId,
+          ti.item_id as itemId,
+          i.name as itemName,
+          i.unit as itemUnit,
+          ti.qty,
+          ti.price,
+          ti.subtotal,
+          ti.created_at as createdAt
+        FROM transaction_items ti
+        LEFT JOIN items i ON ti.item_id = i.id
+        WHERE ti.transaction_id = ?
+        ORDER BY ti.id
+      `
+    ).all(id);
+    transaction.items = items;
+    return transaction;
+  }
+  /**
+   * Generate unique invoice number
+   * Format: INV-YYYYMMDD-XXXX
+   */
+  generateInvoiceNumber() {
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10).replace(/-/g, "");
+    const prefix = `INV-${today}-`;
+    const lastInvoice = this.db.prepare(
+      `
+        SELECT invoice_number FROM transactions
+        WHERE invoice_number LIKE ?
+        ORDER BY id DESC LIMIT 1
+      `
+    ).get(`${prefix}%`);
+    let counter = 1;
+    if (lastInvoice) {
+      const lastCounter = parseInt(
+        lastInvoice.invoice_number.split("-")[2],
+        10
+      );
+      counter = lastCounter + 1;
+    }
+    return `${prefix}${counter.toString().padStart(4, "0")}`;
+  }
+  /**
+   * Create new transaction with items
+   */
+  createTransaction(data, userId) {
+    const invoiceNumber = this.generateInvoiceNumber();
+    const totalAmount = data.items.reduce(
+      (sum, item) => sum + item.qty * item.price,
+      0
+    );
+    const isCashPayment = data.paymentMethodId === 1;
+    const paymentStatus = isCashPayment ? "PAID" : "UNPAID";
+    const createTransaction = this.db.transaction(() => {
+      const insertStmt = this.db.prepare(`
+        INSERT INTO transactions (
+          invoice_number,
+          transaction_type_id,
+          customer_id,
+          vehicle_id,
+          total_amount,
+          payment_status,
+          transaction_status,
+          created_by,
+          notes
+        ) VALUES (?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)
+      `);
+      const result = insertStmt.run(
+        invoiceNumber,
+        data.transactionTypeId,
+        data.customerId,
+        data.vehicleId,
+        totalAmount,
+        paymentStatus,
+        userId,
+        data.notes || null
+      );
+      const transactionId = result.lastInsertRowid;
+      const insertItemStmt = this.db.prepare(`
+        INSERT INTO transaction_items (
+          transaction_id,
+          item_id,
+          qty,
+          price,
+          subtotal
+        ) VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const item of data.items) {
+        const subtotal = item.qty * item.price;
+        insertItemStmt.run(
+          transactionId,
+          item.itemId,
+          item.qty,
+          item.price,
+          subtotal
+        );
+      }
+      this.logStatusChange(
+        transactionId,
+        "CREATED",
+        userId,
+        "Transaction created"
+      );
+      if (isCashPayment && data.paymentMethodId) {
+        const insertPaymentStmt = this.db.prepare(`
+          INSERT INTO payments (
+            transaction_id,
+            payment_method_id,
+            amount,
+            status,
+            paid_at,
+            verified_by,
+            notes
+          ) VALUES (?, ?, ?, 'PAID', CURRENT_TIMESTAMP, ?, 'Auto-paid: CASH')
+        `);
+        insertPaymentStmt.run(
+          transactionId,
+          data.paymentMethodId,
+          totalAmount,
+          userId
+        );
+      }
+      return transactionId;
+    });
+    const createdTransactionId = createTransaction();
+    return this.getTransactionById(createdTransactionId);
+  }
+  /**
+   * Update existing transaction (only for CREATED or QUEUED status)
+   */
+  updateTransaction(id, data) {
+    const transaction = this.getTransactionById(id);
+    if (!transaction) return null;
+    if (transaction.transactionStatus !== "CREATED" && transaction.transactionStatus !== "QUEUED") {
+      throw new Error(
+        "Cannot update transaction with status: " + transaction.transactionStatus
+      );
+    }
+    const updateTransaction = this.db.transaction(() => {
+      const updates = [];
+      const params = [];
+      if (data.transactionTypeId !== void 0) {
+        updates.push("transaction_type_id = ?");
+        params.push(data.transactionTypeId);
+      }
+      if (data.customerId !== void 0) {
+        updates.push("customer_id = ?");
+        params.push(data.customerId);
+      }
+      if (data.vehicleId !== void 0) {
+        updates.push("vehicle_id = ?");
+        params.push(data.vehicleId);
+      }
+      if (data.notes !== void 0) {
+        updates.push("notes = ?");
+        params.push(data.notes);
+      }
+      if (updates.length > 0) {
+        updates.push("updated_at = CURRENT_TIMESTAMP");
+        params.push(id);
+        const query = `UPDATE transactions SET ${updates.join(
+          ", "
+        )} WHERE id = ?`;
+        this.db.prepare(query).run(...params);
+      }
+      if (data.items !== void 0) {
+        this.db.prepare("DELETE FROM transaction_items WHERE transaction_id = ?").run(id);
+        const insertItemStmt = this.db.prepare(`
+          INSERT INTO transaction_items (
+            transaction_id,
+            item_id,
+            qty,
+            price,
+            subtotal
+          ) VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const item of data.items) {
+          const subtotal = item.qty * item.price;
+          insertItemStmt.run(id, item.itemId, item.qty, item.price, subtotal);
+        }
+        const totalAmount = data.items.reduce(
+          (sum, item) => sum + item.qty * item.price,
+          0
+        );
+        this.db.prepare(
+          "UPDATE transactions SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).run(totalAmount, id);
+      }
+    });
+    updateTransaction();
+    return this.getTransactionById(id);
+  }
+  /**
+   * Delete transaction (soft delete - only for CREATED status)
+   */
+  deleteTransaction(id) {
+    const transaction = this.getTransactionById(id);
+    if (!transaction) return false;
+    if (transaction.transactionStatus !== "CREATED") {
+      throw new Error(
+        "Cannot delete transaction with status: " + transaction.transactionStatus
+      );
+    }
+    const result = this.db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+  /**
+   * Search transactions by invoice number, customer name, or vehicle plate
+   */
+  searchTransactions(query) {
+    const searchPattern = `%${query}%`;
+    const transactions = this.db.prepare(
+      `
+        SELECT 
+          t.id,
+          t.invoice_number as invoiceNumber,
+          t.transaction_type_id as transactionTypeId,
+          tt.name as transactionTypeName,
+          t.customer_id as customerId,
+          c.name as customerName,
+          t.vehicle_id as vehicleId,
+          v.plate_number as vehiclePlate,
+          t.total_amount as totalAmount,
+          t.payment_status as paymentStatus,
+          t.transaction_status as transactionStatus,
+          t.created_by as createdBy,
+          u.first_name || ' ' || u.last_name as createdByName,
+          t.notes,
+          t.created_at as createdAt,
+          t.updated_at as updatedAt
+        FROM transactions t
+        LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+        LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vehicles v ON t.vehicle_id = v.id
+        LEFT JOIN users u ON t.created_by = u.id
+        WHERE 
+          t.invoice_number LIKE ? OR
+          c.name LIKE ? OR
+          v.plate_number LIKE ?
+        ORDER BY t.created_at DESC
+        LIMIT 50
+      `
+    ).all(searchPattern, searchPattern, searchPattern);
+    return transactions;
+  }
+  /**
+   * Update transaction status with logging
+   */
+  updateTransactionStatus(id, newStatus, userId, note) {
+    const transaction = this.getTransactionById(id);
+    if (!transaction) return null;
+    const validTransitions = {
+      CREATED: ["QUEUED"],
+      QUEUED: ["LOADING"],
+      LOADING: ["DONE"],
+      DONE: ["CHECKED_OUT"],
+      CHECKED_OUT: []
+    };
+    const allowedStatuses = validTransitions[transaction.transactionStatus];
+    if (!allowedStatuses.includes(newStatus)) {
+      throw new Error(
+        `Cannot transition from ${transaction.transactionStatus} to ${newStatus}`
+      );
+    }
+    this.db.transaction(() => {
+      this.db.prepare(
+        "UPDATE transactions SET transaction_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(newStatus, id);
+      this.logStatusChange(id, newStatus, userId, note);
+    })();
+    return this.getTransactionById(id);
+  }
+  /**
+   * Get status history for a transaction
+   */
+  getStatusHistory(transactionId) {
+    const logs = this.db.prepare(
+      `
+        SELECT 
+          tsl.id,
+          tsl.transaction_id as transactionId,
+          tsl.status,
+          tsl.changed_by as changedBy,
+          u.first_name || ' ' || u.last_name as changedByName,
+          tsl.changed_at as changedAt,
+          tsl.note
+        FROM transaction_status_logs tsl
+        LEFT JOIN users u ON tsl.changed_by = u.id
+        WHERE tsl.transaction_id = ?
+        ORDER BY tsl.changed_at ASC
+      `
+    ).all(transactionId);
+    return logs;
+  }
+  /**
+   * Log status change
+   */
+  logStatusChange(transactionId, status, userId, note) {
+    this.db.prepare(
+      `
+        INSERT INTO transaction_status_logs (
+          transaction_id,
+          status,
+          changed_by,
+          note
+        ) VALUES (?, ?, ?, ?)
+      `
+    ).run(transactionId, status, userId, note || null);
+  }
+  /**
+   * Add payment to transaction (sets verification_status to PENDING)
+   */
+  addPayment(transactionId, data, verifiedBy) {
+    const transaction = this.getTransactionById(transactionId);
+    if (!transaction) return null;
+    this.db.transaction(() => {
+      const insertStmt = this.db.prepare(`
+        INSERT INTO payments (
+          transaction_id,
+          payment_method_id,
+          amount,
+          status,
+          verification_status,
+          paid_at,
+          verified_by,
+          notes
+        ) VALUES (?, ?, ?, 'PAID', 'PENDING', CURRENT_TIMESTAMP, ?, ?)
+      `);
+      insertStmt.run(
+        transactionId,
+        data.paymentMethodId,
+        data.amount,
+        verifiedBy,
+        data.notes || null
+      );
+      this.updatePaymentStatus(transactionId);
+    })();
+    return this.getPayments(transactionId).pop() || null;
+  }
+  /**
+   * Get all payments for a transaction (includes verification fields)
+   */
+  getPayments(transactionId) {
+    const payments = this.db.prepare(
+      `
+        SELECT
+          p.id,
+          p.transaction_id as transactionId,
+          p.payment_method_id as paymentMethodId,
+          pm.name as paymentMethodName,
+          p.amount,
+          p.status,
+          p.verification_status as verificationStatus,
+          p.paid_at as paidAt,
+          p.verified_by as verifiedBy,
+          u.first_name || ' ' || u.last_name as verifiedByName,
+          p.verified_at as verifiedAt,
+          p.rejection_reason as rejectionReason,
+          p.notes,
+          p.created_at as createdAt
+        FROM payments p
+        LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
+        LEFT JOIN users u ON p.verified_by = u.id
+        WHERE p.transaction_id = ?
+        ORDER BY p.paid_at DESC
+      `
+    ).all(transactionId);
+    return payments;
+  }
+  /**
+   * Auto-update payment status based on total VERIFIED payments
+   */
+  updatePaymentStatus(transactionId) {
+    const transaction = this.getTransactionById(transactionId);
+    if (!transaction) return;
+    const totalPaid = this.db.prepare(
+      `
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM payments
+        WHERE transaction_id = ? AND verification_status = 'VERIFIED'
+      `
+    ).get(transactionId);
+    const newStatus = totalPaid.total >= transaction.totalAmount ? "PAID" : "UNPAID";
+    this.db.prepare(
+      "UPDATE transactions SET payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(newStatus, transactionId);
+  }
+  /**
+   * Get daily statistics
+   */
+  getDailyStats(date2) {
+    const targetDate = date2 || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const stats = this.db.prepare(
+      `
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN transaction_status = 'CREATED' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN transaction_status = 'LOADING' THEN 1 ELSE 0 END) as loading,
+          SUM(CASE WHEN transaction_status = 'DONE' THEN 1 ELSE 0 END) as done,
+          SUM(CASE WHEN transaction_status = 'CHECKED_OUT' THEN 1 ELSE 0 END) as checkedOut,
+          COALESCE(SUM(total_amount), 0) as totalAmount,
+          COALESCE(
+            (SELECT SUM(p.amount) 
+             FROM payments p 
+             WHERE p.transaction_id IN (
+               SELECT t.id FROM transactions t 
+               WHERE DATE(t.created_at) = ?
+             )),
+            0
+          ) as paidAmount
+        FROM transactions
+        WHERE DATE(created_at) = ?
+      `
+    ).get(targetDate, targetDate);
+    return {
+      date: targetDate,
+      total: stats.total,
+      pending: stats.pending,
+      loading: stats.loading,
+      done: stats.done,
+      checkedOut: stats.checkedOut,
+      totalAmount: stats.totalAmount,
+      paidAmount: stats.paidAmount
+    };
+  }
+  /**
+   * Get today's transactions
+   */
+  getTodayTransactions() {
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const transactions = this.db.prepare(
+      `
+        SELECT 
+          t.id,
+          t.invoice_number as invoiceNumber,
+          t.transaction_type_id as transactionTypeId,
+          tt.name as transactionTypeName,
+          t.customer_id as customerId,
+          c.name as customerName,
+          t.vehicle_id as vehicleId,
+          v.plate_number as vehiclePlate,
+          t.total_amount as totalAmount,
+          t.payment_status as paymentStatus,
+          t.transaction_status as transactionStatus,
+          t.created_by as createdBy,
+          u.first_name || ' ' || u.last_name as createdByName,
+          t.notes,
+          t.created_at as createdAt,
+          t.updated_at as updatedAt
+        FROM transactions t
+        LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+        LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vehicles v ON t.vehicle_id = v.id
+        LEFT JOIN users u ON t.created_by = u.id
+        WHERE DATE(t.created_at) = ?
+        ORDER BY t.created_at DESC
+      `
+    ).all(today);
+    return transactions;
+  }
+  /**
+   * Get all transaction types
+   */
+  getTransactionTypes() {
+    const types = this.db.prepare(
+      `
+        SELECT 
+          id,
+          name,
+          created_at as createdAt
+        FROM transaction_types
+        ORDER BY name
+      `
+    ).all();
+    return types;
+  }
+  /**
+   * Get all payment methods
+   */
+  getPaymentMethods() {
+    const methods = this.db.prepare(
+      `
+        SELECT
+          id,
+          name,
+          created_at as createdAt
+        FROM payment_methods
+        ORDER BY name
+      `
+    ).all();
+    return methods;
+  }
+  /**
+   * Get pending payments for verification
+   */
+  getPendingPayments(filters = {}) {
+    const {
+      verificationStatus = "PENDING",
+      transactionId,
+      customerId,
+      dateFrom,
+      dateTo,
+      page = 1,
+      limit = 20
+    } = filters;
+    let query = `
+      SELECT
+        p.id,
+        p.transaction_id as transactionId,
+        p.payment_method_id as paymentMethodId,
+        pm.name as paymentMethodName,
+        p.amount,
+        p.status,
+        p.verification_status as verificationStatus,
+        p.paid_at as paidAt,
+        p.verified_by as verifiedBy,
+        u.first_name || ' ' || u.last_name as verifiedByName,
+        p.verified_at as verifiedAt,
+        p.rejection_reason as rejectionReason,
+        p.notes,
+        p.created_at as createdAt,
+        t.invoice_number as transactionInvoiceNumber,
+        c.name as customerName,
+        v.plate_number as vehiclePlate
+      FROM payments p
+      LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
+      LEFT JOIN transactions t ON p.transaction_id = t.id
+      LEFT JOIN customers c ON t.customer_id = c.id
+      LEFT JOIN vehicles v ON t.vehicle_id = v.id
+      LEFT JOIN users u ON p.verified_by = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (verificationStatus) {
+      query += " AND p.verification_status = ?";
+      params.push(verificationStatus);
+    }
+    if (transactionId) {
+      query += " AND p.transaction_id = ?";
+      params.push(transactionId);
+    }
+    if (customerId) {
+      query += " AND t.customer_id = ?";
+      params.push(customerId);
+    }
+    if (dateFrom) {
+      query += " AND DATE(p.paid_at) >= ?";
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      query += " AND DATE(p.paid_at) <= ?";
+      params.push(dateTo);
+    }
+    query += " ORDER BY p.verified_at DESC, p.created_at DESC LIMIT ? OFFSET ?";
+    const offset = (page - 1) * limit;
+    params.push(limit, offset);
+    const payments = this.db.prepare(query).all(...params);
+    let countQuery = `
+      SELECT COUNT(*) as total FROM payments p
+      LEFT JOIN transactions t ON p.transaction_id = t.id
+      WHERE 1=1
+    `;
+    const countParams = [];
+    if (verificationStatus) {
+      countQuery += " AND p.verification_status = ?";
+      countParams.push(verificationStatus);
+    }
+    if (transactionId) {
+      countQuery += " AND p.transaction_id = ?";
+      countParams.push(transactionId);
+    }
+    if (customerId) {
+      countQuery += " AND t.customer_id = ?";
+      countParams.push(customerId);
+    }
+    if (dateFrom) {
+      countQuery += " AND DATE(p.paid_at) >= ?";
+      countParams.push(dateFrom);
+    }
+    if (dateTo) {
+      countQuery += " AND DATE(p.paid_at) <= ?";
+      countParams.push(dateTo);
+    }
+    const countResult = this.db.prepare(countQuery).get(...countParams);
+    const total = countResult.total;
+    return {
+      payments,
+      total,
+      page,
+      limit
+    };
+  }
+  /**
+   * Get single payment by ID
+   */
+  getPaymentById(id) {
+    const payment = this.db.prepare(
+      `
+        SELECT
+          p.id,
+          p.transaction_id as transactionId,
+          p.payment_method_id as paymentMethodId,
+          pm.name as paymentMethodName,
+          p.amount,
+          p.status,
+          p.verification_status as verificationStatus,
+          p.paid_at as paidAt,
+          p.verified_by as verifiedBy,
+          u.first_name || ' ' || u.last_name as verifiedByName,
+          p.verified_at as verifiedAt,
+          p.rejection_reason as rejectionReason,
+          p.notes,
+          p.created_at as createdAt,
+          t.invoice_number as transactionInvoiceNumber,
+          c.name as customerName,
+          v.plate_number as vehiclePlate
+        FROM payments p
+        LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
+        LEFT JOIN transactions t ON p.transaction_id = t.id
+        LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vehicles v ON t.vehicle_id = v.id
+        LEFT JOIN users u ON p.verified_by = u.id
+        WHERE p.id = ?
+      `
+    ).get(id);
+    return payment;
+  }
+  /**
+   * Verify payment (PENDING → VERIFIED)
+   */
+  verifyPayment(paymentId, verifiedBy, notes) {
+    const payment = this.getPaymentById(paymentId);
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+    if (payment.verificationStatus !== "PENDING") {
+      throw new Error("Payment is not in PENDING status");
+    }
+    this.db.transaction(() => {
+      this.db.prepare(
+        `
+        UPDATE payments
+        SET verification_status = 'VERIFIED',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      `
+      ).run(verifiedBy, notes, paymentId);
+      this.updatePaymentStatus(payment.transactionId);
+    })();
+    return this.getPaymentById(paymentId);
+  }
+  /**
+   * Reject payment (PENDING → REJECTED)
+   */
+  rejectPayment(paymentId, verifiedBy, reason, notes) {
+    const payment = this.getPaymentById(paymentId);
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+    if (payment.verificationStatus !== "PENDING") {
+      throw new Error("Payment is not in PENDING status");
+    }
+    if (!reason || reason.trim().length < 10) {
+      throw new Error("Rejection reason must be at least 10 characters");
+    }
+    this.db.transaction(() => {
+      this.db.prepare(
+        `
+        UPDATE payments
+        SET verification_status = 'REJECTED',
+            verified_by = ?,
+            verified_at = CURRENT_TIMESTAMP,
+            rejection_reason = ?,
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      `
+      ).run(verifiedBy, reason, notes, paymentId);
+    })();
+    return this.getPaymentById(paymentId);
+  }
+  /**
+   * Get verification statistics
+   */
+  getVerificationStats(dateRange) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const fromDate = (dateRange == null ? void 0 : dateRange.from) || today;
+    const toDate = (dateRange == null ? void 0 : dateRange.to) || today;
+    const stats = this.db.prepare(
+      `
+        SELECT
+          DATE(paid_at) as date,
+          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) as pendingCount,
+          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) as verifiedCount,
+          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) as rejectedCount,
+          SUM(CASE WHEN verification_status = 'PENDING' THEN 1 ELSE 0 END) OVER () as totalPending,
+          SUM(CASE WHEN verification_status = 'VERIFIED' THEN 1 ELSE 0 END) OVER () as totalVerified,
+          SUM(CASE WHEN verification_status = 'REJECTED' THEN 1 ELSE 0 END) OVER () as totalRejected
+        FROM payments
+        WHERE DATE(paid_at) BETWEEN ? AND ?
+        GROUP BY DATE(paid_at)
+        ORDER BY date DESC
+        LIMIT 1
+      `
+    ).get(fromDate, toDate);
+    return {
+      date: stats.date,
+      pendingCount: stats.pendingCount || 0,
+      verifiedCount: stats.verifiedCount || 0,
+      rejectedCount: stats.rejectedCount || 0,
+      totalPending: stats.totalPending || 0,
+      totalVerified: stats.totalVerified || 0,
+      totalRejected: stats.totalRejected || 0
+    };
+  }
+}
 const require$1 = createRequire(import.meta.url);
 require$1("better-sqlite3");
 class AuthManager {
@@ -1198,6 +6434,10 @@ class AuthManager {
     __publicField(this, "apiClient");
     __publicField(this, "networkStatus");
     __publicField(this, "rbacManager");
+    __publicField(this, "itemsManager");
+    __publicField(this, "customerManager");
+    __publicField(this, "vehicleManager");
+    __publicField(this, "transactionManager");
     __publicField(this, "db");
     this.db = db;
     this.tokenStorage = new TokenStorage(db);
@@ -1205,12 +6445,40 @@ class AuthManager {
     this.apiClient = new DummyJSONClient();
     this.networkStatus = new NetworkStatus();
     this.rbacManager = new RBACManager(db);
+    this.itemsManager = new ItemsManager(db);
+    this.customerManager = new CustomerManager(db);
+    this.vehicleManager = new VehicleManager(db);
+    this.transactionManager = new TransactionManager(db);
+  }
+  /**
+   * Get Items manager for item management
+   */
+  getItemsManager() {
+    return this.itemsManager;
+  }
+  /**
+   * Get Customer manager for customer management
+   */
+  getCustomerManager() {
+    return this.customerManager;
+  }
+  /**
+   * Get Vehicle manager for vehicle management
+   */
+  getVehicleManager() {
+    return this.vehicleManager;
   }
   /**
    * Get RBAC manager for permission checks
    */
   getRBACManager() {
     return this.rbacManager;
+  }
+  /**
+   * Get Transaction manager for transaction management
+   */
+  getTransactionManager() {
+    return this.transactionManager;
   }
   /**
    * Login with username and password
@@ -1769,6 +7037,711 @@ function setupAuthHandlers() {
       };
     }
   });
+  ipcMain.handle("items:getAll", async () => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const items = itemsManager.getAllItems();
+      return { success: true, data: items };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get items"
+      };
+    }
+  });
+  ipcMain.handle("items:getById", async (_event, itemId) => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const item = itemsManager.getItemById(itemId);
+      if (!item) {
+        return { success: false, error: "Item not found" };
+      }
+      return { success: true, data: item };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get item"
+      };
+    }
+  });
+  ipcMain.handle(
+    "items:create",
+    async (_event, itemData) => {
+      try {
+        const itemsManager = authManager.getItemsManager();
+        const item = itemsManager.createItem(itemData);
+        return { success: true, data: item };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to create item"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "items:update",
+    async (_event, itemId, itemData, userId) => {
+      try {
+        const itemsManager = authManager.getItemsManager();
+        const item = itemsManager.updateItem(itemId, itemData, userId);
+        if (!item) {
+          return { success: false, error: "Item not found" };
+        }
+        return { success: true, data: item };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update item"
+        };
+      }
+    }
+  );
+  ipcMain.handle("items:delete", async (_event, itemId) => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const success = itemsManager.deleteItem(itemId);
+      if (!success) {
+        return { success: false, error: "Failed to delete item" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete item"
+      };
+    }
+  });
+  ipcMain.handle("items:toggleStatus", async (_event, itemId) => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const item = itemsManager.toggleItemStatus(itemId);
+      if (!item) {
+        return { success: false, error: "Item not found" };
+      }
+      return { success: true, data: item };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to toggle item status"
+      };
+    }
+  });
+  ipcMain.handle("items:search", async (_event, query) => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const items = itemsManager.searchItems(query);
+      return { success: true, data: items };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to search items"
+      };
+    }
+  });
+  ipcMain.handle("items:getActive", async () => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const items = itemsManager.getActiveItems();
+      return { success: true, data: items };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get active items"
+      };
+    }
+  });
+  ipcMain.handle("items:getPriceHistory", async (_event, itemId) => {
+    try {
+      const itemsManager = authManager.getItemsManager();
+      const history = itemsManager.getPriceHistory(itemId);
+      return { success: true, data: history };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get price history"
+      };
+    }
+  });
+  ipcMain.handle(
+    "customers:getAll",
+    async (_event, filters = {}) => {
+      try {
+        const customerManager = authManager.getCustomerManager();
+        const result = customerManager.getAll(filters);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get customers"
+        };
+      }
+    }
+  );
+  ipcMain.handle("customers:getById", async (_event, customerId) => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const customer = customerManager.getById(customerId);
+      if (!customer) {
+        return { success: false, error: "Customer not found" };
+      }
+      return { success: true, data: customer };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get customer"
+      };
+    }
+  });
+  ipcMain.handle(
+    "customers:create",
+    async (_event, customerData) => {
+      try {
+        const customerManager = authManager.getCustomerManager();
+        const customer = customerManager.create(customerData);
+        return { success: true, data: customer };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to create customer"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "customers:update",
+    async (_event, customerId, customerData) => {
+      try {
+        const customerManager = authManager.getCustomerManager();
+        const customer = customerManager.update(customerId, customerData);
+        if (!customer) {
+          return { success: false, error: "Customer not found" };
+        }
+        return { success: true, data: customer };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update customer"
+        };
+      }
+    }
+  );
+  ipcMain.handle("customers:delete", async (_event, customerId) => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const success = customerManager.delete(customerId);
+      if (!success) {
+        return { success: false, error: "Failed to delete customer" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete customer"
+      };
+    }
+  });
+  ipcMain.handle("customers:search", async (_event, query) => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const customers = customerManager.search(query);
+      return { success: true, data: customers };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to search customers"
+      };
+    }
+  });
+  ipcMain.handle("customers:getActive", async () => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const customers = customerManager.getActive();
+      return { success: true, data: customers };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get active customers"
+      };
+    }
+  });
+  ipcMain.handle(
+    "vehicles:getAll",
+    async (_event, filters = {}) => {
+      try {
+        const vehicleManager = authManager.getVehicleManager();
+        const result = vehicleManager.getAll(filters);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get vehicles"
+        };
+      }
+    }
+  );
+  ipcMain.handle("vehicles:getById", async (_event, vehicleId) => {
+    try {
+      const vehicleManager = authManager.getVehicleManager();
+      const vehicle = vehicleManager.getById(vehicleId);
+      if (!vehicle) {
+        return { success: false, error: "Vehicle not found" };
+      }
+      return { success: true, data: vehicle };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get vehicle"
+      };
+    }
+  });
+  ipcMain.handle(
+    "vehicles:create",
+    async (_event, vehicleData) => {
+      try {
+        const vehicleManager = authManager.getVehicleManager();
+        const vehicle = vehicleManager.create(vehicleData);
+        return { success: true, data: vehicle };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to create vehicle"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "vehicles:update",
+    async (_event, vehicleId, vehicleData) => {
+      try {
+        const vehicleManager = authManager.getVehicleManager();
+        const vehicle = vehicleManager.update(vehicleId, vehicleData);
+        if (!vehicle) {
+          return { success: false, error: "Vehicle not found" };
+        }
+        return { success: true, data: vehicle };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update vehicle"
+        };
+      }
+    }
+  );
+  ipcMain.handle("vehicles:delete", async (_event, vehicleId) => {
+    try {
+      const vehicleManager = authManager.getVehicleManager();
+      const success = vehicleManager.delete(vehicleId);
+      if (!success) {
+        return { success: false, error: "Failed to delete vehicle" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to delete vehicle"
+      };
+    }
+  });
+  ipcMain.handle("vehicles:search", async (_event, query) => {
+    try {
+      const vehicleManager = authManager.getVehicleManager();
+      const vehicles = vehicleManager.search(query);
+      return { success: true, data: vehicles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to search vehicles"
+      };
+    }
+  });
+  ipcMain.handle(
+    "vehicles:getByCustomerId",
+    async (_event, customerId) => {
+      try {
+        const vehicleManager = authManager.getVehicleManager();
+        const vehicles = vehicleManager.getByCustomerId(customerId);
+        return { success: true, data: vehicles };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get customer vehicles"
+        };
+      }
+    }
+  );
+  ipcMain.handle("vehicles:getActive", async () => {
+    try {
+      const vehicleManager = authManager.getVehicleManager();
+      const vehicles = vehicleManager.getActive();
+      return { success: true, data: vehicles };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get active vehicles"
+      };
+    }
+  });
+  ipcMain.handle(
+    "vehicles:plateNumberExists",
+    async (_event, plateNumber, excludeId) => {
+      try {
+        const vehicleManager = authManager.getVehicleManager();
+        const exists = vehicleManager.plateNumberExists(plateNumber, excludeId);
+        return { success: true, data: exists };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to check plate number"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:getAll",
+    async (_event, filters = {}) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const result = transactionManager.getAllTransactions({
+          ...filters,
+          status: filters.status,
+          paymentStatus: filters.paymentStatus
+        });
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get transactions"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:getById",
+    async (_event, transactionId) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const transaction = transactionManager.getTransactionById(transactionId);
+        if (!transaction) {
+          return { success: false, error: "Transaction not found" };
+        }
+        return { success: true, data: transaction };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get transaction"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:create",
+    async (_event, transactionData, userId) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const transaction = transactionManager.createTransaction(
+          transactionData,
+          userId
+        );
+        return { success: true, data: transaction };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to create transaction"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:update",
+    async (_event, transactionId, transactionData) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const transaction = transactionManager.updateTransaction(
+          transactionId,
+          transactionData
+        );
+        if (!transaction) {
+          return { success: false, error: "Transaction not found" };
+        }
+        return { success: true, data: transaction };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update transaction"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:delete",
+    async (_event, transactionId) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const success = transactionManager.deleteTransaction(transactionId);
+        if (!success) {
+          return { success: false, error: "Failed to delete transaction" };
+        }
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to delete transaction"
+        };
+      }
+    }
+  );
+  ipcMain.handle("transactions:search", async (_event, query) => {
+    try {
+      const transactionManager = authManager.getTransactionManager();
+      const transactions = transactionManager.searchTransactions(query);
+      return { success: true, data: transactions };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to search transactions"
+      };
+    }
+  });
+  ipcMain.handle(
+    "transactions:updateStatus",
+    async (_event, transactionId, newStatus, userId, note) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const transaction = transactionManager.updateTransactionStatus(
+          transactionId,
+          newStatus,
+          userId,
+          note
+        );
+        if (!transaction) {
+          return { success: false, error: "Transaction not found" };
+        }
+        return { success: true, data: transaction };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to update transaction status"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:getStatusHistory",
+    async (_event, transactionId) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const history = transactionManager.getStatusHistory(transactionId);
+        return { success: true, data: history };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get status history"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:addPayment",
+    async (_event, transactionId, paymentData, verifiedBy) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const payment = transactionManager.addPayment(
+          transactionId,
+          paymentData,
+          verifiedBy
+        );
+        if (!payment) {
+          return { success: false, error: "Transaction not found" };
+        }
+        return { success: true, data: payment };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to add payment"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:getPayments",
+    async (_event, transactionId) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const payments = transactionManager.getPayments(transactionId);
+        return { success: true, data: payments };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get payments"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "transactions:getDailyStats",
+    async (_event, date2) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const stats = transactionManager.getDailyStats(date2);
+        return { success: true, data: stats };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get daily stats"
+        };
+      }
+    }
+  );
+  ipcMain.handle("transactionTypes:getAll", async () => {
+    try {
+      const transactionManager = authManager.getTransactionManager();
+      const types = transactionManager.getTransactionTypes();
+      return { success: true, data: types };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get transaction types"
+      };
+    }
+  });
+  ipcMain.handle("paymentMethods:getAll", async () => {
+    try {
+      const transactionManager = authManager.getTransactionManager();
+      const methods = transactionManager.getPaymentMethods();
+      return { success: true, data: methods };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get payment methods"
+      };
+    }
+  });
+  ipcMain.handle(
+    "payments:getPending",
+    async (_event, filters) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+        if (!hasPermission) {
+          return {
+            success: false,
+            error: "You do not have permission to verify payments"
+          };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const result = transactionManager.getPendingPayments(filters);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get pending payments"
+        };
+      }
+    }
+  );
+  ipcMain.handle("payments:getById", async (_event, paymentId) => {
+    try {
+      const user = await authManager.getCurrentUser();
+      if (!user) {
+        return { success: false, error: "Not authenticated" };
+      }
+      const transactionManager = authManager.getTransactionManager();
+      const payment = transactionManager.getPaymentById(paymentId);
+      if (!payment) {
+        return { success: false, error: "Payment not found" };
+      }
+      return { success: true, data: payment };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get payment"
+      };
+    }
+  });
+  ipcMain.handle(
+    "payments:verify",
+    async (_event, paymentId, notes) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+        if (!hasPermission) {
+          return {
+            success: false,
+            error: "You do not have permission to verify payments"
+          };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const payment = transactionManager.verifyPayment(
+          paymentId,
+          user.id,
+          notes
+        );
+        return { success: true, data: payment };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to verify payment"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "payments:reject",
+    async (_event, paymentId, reason, notes) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const hasPermission = user.permissions.includes("VERIFY_PAYMENT");
+        if (!hasPermission) {
+          return {
+            success: false,
+            error: "You do not have permission to verify payments"
+          };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const payment = transactionManager.rejectPayment(
+          paymentId,
+          user.id,
+          reason,
+          notes
+        );
+        return { success: true, data: payment };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to reject payment"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "payments:getVerificationStats",
+    async (_event, dateRange) => {
+      try {
+        const user = await authManager.getCurrentUser();
+        if (!user) {
+          return { success: false, error: "Not authenticated" };
+        }
+        const transactionManager = authManager.getTransactionManager();
+        const stats = transactionManager.getVerificationStats(dateRange);
+        return { success: true, data: stats };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to get verification stats"
+        };
+      }
+    }
+  );
 }
 app.whenReady().then(() => {
   initializeAuth();

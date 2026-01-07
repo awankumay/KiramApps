@@ -1,25 +1,58 @@
-# Testing Credentials - DummyJSON Authentication
+# Testing Credentials
 
-## Test Users
+## Local Users (Recommended for Testing)
 
-The application uses DummyJSON API for authentication testing. Below are the available test credentials:
+Local users tersimpan di database lokal dengan password yang di-hash menggunakan SHA256. Gunakan credentials ini untuk testing fitur-fitur aplikasi.
 
-### Primary Test Account
+### Primary Test Accounts
 
-**Username:** `emilys`  
-**Password:** `emilyspass`  
-**Full Name:** Emily Johnson  
-**Email:** emily.johnson@x.dummyjson.com
+| Username   | Password    | Role       | Permissions                                        |
+| ---------- | ----------- | ---------- | -------------------------------------------------- |
+| superadmin | password123 | SUPERADMIN | Full access - semua fitur                          |
+| checker1   | checker123  | CHECKER    | Dashboard, Create/View Transaction, Verify Payment |
+| loader1    | loader123   | LOADER     | Dashboard, View Loader Queue, Update Status        |
 
-### Additional Test Accounts
+### Testing by Role
 
-| Username | Password     | Full Name        | Email                            |
-| -------- | ------------ | ---------------- | -------------------------------- |
-| michaelw | michaelwpass | Michael Williams | michael.williams@x.dummyjson.com |
-| sophiab  | sophiabpass  | Sophia Brown     | sophia.brown@x.dummyjson.com     |
-| jamesd   | jamesdpass   | James Davis      | james.davis@x.dummyjson.com      |
-| emmaj    | emmajpass    | Emma Miller      | emma.miller@x.dummyjson.com      |
-| oliviaw  | oliviawpass  | Olivia Wilson    | olivia.wilson@x.dummyjson.com    |
+**SUPERADMIN (superadmin / password123)**
+
+- ✅ Full system access
+- ✅ Manage Users, Roles, Items
+- ✅ View Reports
+- ✅ All transaction operations
+
+**CHECKER (checker1 / checker123)**
+
+- ✅ View Dashboard
+- ✅ Create Transaction
+- ✅ View Transaction
+- ✅ Verify Payment
+- ❌ Cannot manage users/roles
+
+**LOADER (loader1 / loader123)**
+
+- ✅ View Dashboard
+- ✅ View Loader Queue
+- ✅ Update Loader Status
+- ❌ Cannot create transactions or manage users
+
+---
+
+## DummyJSON API Users (Optional)
+
+The application juga supports DummyJSON API untuk authentication testing. User ini otomatis ter-assign role di database lokal.
+
+### DummyJSON Test Accounts
+
+| Username | Password     | Full Name        | Email                            | Local Role |
+| -------- | ------------ | ---------------- | -------------------------------- | ---------- |
+| emilys   | emilyspass   | Emily Johnson    | emily.johnson@x.dummyjson.com    | CHECKER    |
+| michaelw | michaelwpass | Michael Williams | michael.williams@x.dummyjson.com | -          |
+| sophiab  | sophiabpass  | Sophia Brown     | sophia.brown@x.dummyjson.com     | LOADER     |
+| jamesd   | jamesdpass   | James Davis      | james.davis@x.dummyjson.com      | inactive   |
+| emmaw    | emmawpass    | Emma Wilson      | emma.wilson@x.dummyjson.com      | -          |
+
+---
 
 ## Testing Scenarios
 

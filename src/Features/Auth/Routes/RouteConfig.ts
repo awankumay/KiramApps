@@ -51,12 +51,57 @@ export const ROUTES: Record<string, RouteConfig> = {
     icon: "Shield",
     showInNav: true,
   },
+  items: {
+    path: "/superadmin/items",
+    name: "Manajemen Item",
+    permissions: [Permission.MANAGE_ITEMS],
+    icon: "Package",
+    showInNav: true,
+  },
   reports: {
     path: "/superadmin/reports",
     name: "Laporan",
     permissions: [Permission.VIEW_REPORTS],
     icon: "BarChart3",
     showInNav: true,
+  },
+  customers: {
+    path: "/superadmin/customers",
+    name: "Manajemen Customer",
+    permissions: [Permission.MANAGE_CUSTOMERS],
+    icon: "Building2",
+    showInNav: true,
+  },
+  customerForm: {
+    path: "/superadmin/customers/new",
+    name: "Tambah Customer",
+    permissions: [Permission.MANAGE_CUSTOMERS],
+    showInNav: false,
+  },
+  customerEdit: {
+    path: "/superadmin/customers/:id",
+    name: "Edit Customer",
+    permissions: [Permission.MANAGE_CUSTOMERS],
+    showInNav: false,
+  },
+  vehicles: {
+    path: "/superadmin/vehicles",
+    name: "Manajemen Kendaraan",
+    permissions: [Permission.MANAGE_VEHICLES],
+    icon: "Car",
+    showInNav: true,
+  },
+  vehicleForm: {
+    path: "/superadmin/vehicles/new",
+    name: "Tambah Kendaraan",
+    permissions: [Permission.MANAGE_VEHICLES],
+    showInNav: false,
+  },
+  vehicleEdit: {
+    path: "/superadmin/vehicles/:id",
+    name: "Edit Kendaraan",
+    permissions: [Permission.MANAGE_VEHICLES],
+    showInNav: false,
   },
 
   // Transaction routes (Checker + Superadmin)
@@ -130,7 +175,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Superadmin",
-    items: ["users", "roles", "reports"],
+    items: ["users", "roles", "items", "customers", "vehicles", "reports"],
   },
   {
     label: "Transaksi",

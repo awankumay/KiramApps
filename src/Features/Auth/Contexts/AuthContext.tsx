@@ -5,6 +5,7 @@ import {
   useEffect,
   ReactNode,
   useCallback,
+  useMemo,
 } from "react";
 import type { UserWithRoles } from "@Shared/Types/Electron";
 
@@ -94,8 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // RBAC helper functions
-  const permissions = user?.permissions ?? [];
-  const roles = user?.roles ?? [];
+  const permissions = useMemo(
+    () => user?.permissions ?? [],
+    [user?.permissions]
+  );
+  const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
 
   const hasPermission = useCallback(
     (permission: string) => {
@@ -144,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {

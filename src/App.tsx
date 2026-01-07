@@ -17,6 +17,10 @@ import {
 import { AppSidebarLayout } from "@Shared/Components/AppSidebarRBAC";
 import { Permission, ROLE_PERMISSIONS } from "@Shared/Types/RBAC";
 import { Role } from "@Shared/Types/RBAC";
+import { CustomerListPage } from "@Features/Customer/CustomerListPage";
+import { CustomerForm } from "@Features/Customer/CustomerForm";
+import { VehicleListPage } from "@Features/Vehicle/VehicleListPage";
+import { VehicleForm } from "@Features/Vehicle/VehicleForm";
 
 /**
  * Helper function to check if a path is accessible for given roles
@@ -48,10 +52,12 @@ import { DashboardPage as SuperadminDashboard } from "@Features/Superadmin/Dashb
 import { UsersPage } from "@Features/Superadmin/UsersPage";
 import { RolesPage } from "@Features/Superadmin/RolesPage";
 import { ReportsPage } from "@Features/Superadmin/ReportsPage";
+import { ItemsPage } from "@Features/Superadmin/ItemsPage";
 
 // Checker Pages
 import { TransactionListPage } from "@Features/Checker/TransactionListPage";
 import { CreateTransactionPage } from "@Features/Checker/CreateTransactionPage";
+import { TransactionDetailPage } from "@Features/Checker/TransactionDetailPage";
 import { PaymentVerifyPage } from "@Features/Checker/PaymentVerifyPage";
 
 // Loader Pages
@@ -130,6 +136,66 @@ function AppContent() {
           }
         />
         <Route
+          path="/superadmin/items"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_ITEMS]}>
+              <ItemsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Customer Management Routes */}
+        <Route
+          path="/superadmin/customers"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_CUSTOMERS]}>
+              <CustomerListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/customers/new"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_CUSTOMERS]}>
+              <CustomerForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/customers/:id"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_CUSTOMERS]}>
+              <CustomerForm />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Vehicle Management Routes */}
+        <Route
+          path="/superadmin/vehicles"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_VEHICLES]}>
+              <VehicleListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/vehicles/new"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_VEHICLES]}>
+              <VehicleForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/vehicles/:id"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_VEHICLES]}>
+              <VehicleForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/superadmin/reports"
           element={
             <ProtectedRoute permissions={[Permission.VIEW_REPORTS]}>
@@ -152,6 +218,14 @@ function AppContent() {
           element={
             <ProtectedRoute permissions={[Permission.CREATE_TRANSACTION]}>
               <CreateTransactionPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/checker/transactions/:id"
+          element={
+            <ProtectedRoute permissions={[Permission.VIEW_TRANSACTION]}>
+              <TransactionDetailPage />
             </ProtectedRoute>
           }
         />

@@ -7,6 +7,21 @@ const BetterSqlite3 = require("better-sqlite3");
 
 type DatabaseInstance = ReturnType<typeof BetterSqlite3>;
 
+interface SessionRow {
+  id: number;
+  userId: number;
+  username: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  access_token_encrypted: Buffer;
+  refresh_token_encrypted: Buffer;
+  tokenExpiry: string;
+  isActive: number;
+  createdAt: string;
+  lastRefreshedAt: string | null;
+}
+
 export interface AuthSession {
   id?: number;
   userId: number;
@@ -125,7 +140,7 @@ export class TokenStorage {
         LIMIT 1
       `);
 
-      const row = stmt.get() as any;
+      const row = stmt.get() as SessionRow | undefined;
 
       if (!row) {
         return null;
@@ -141,13 +156,13 @@ export class TokenStorage {
         id: row.id,
         userId: row.userId,
         username: row.username,
-        email: row.email,
-        firstName: row.firstName,
-        lastName: row.lastName,
+        email: row.email ?? undefined,
+        firstName: row.firstName ?? undefined,
+        lastName: row.lastName ?? undefined,
         tokenExpiry: row.tokenExpiry,
         isActive: Boolean(row.isActive),
         createdAt: row.createdAt,
-        lastRefreshedAt: row.lastRefreshedAt,
+        lastRefreshedAt: row.lastRefreshedAt ?? undefined,
         accessToken,
         refreshToken,
       };

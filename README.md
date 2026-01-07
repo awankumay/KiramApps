@@ -49,6 +49,41 @@ src/
 - **Files:** PascalCase for all files (consistent naming convention)
 - **Database tables:** snake_case (e.g., `surat_masuk`)
 
+## Database Management
+
+This project uses a **SQL-based migration system** to manage database schema and data changes.
+
+### Quick Commands
+
+```bash
+# Check migration status
+npm run migration:status
+
+# Create new migration
+npm run migration:create <name>
+
+# Run pending migrations
+npm run migration:run
+
+# Fresh database (reset + run all migrations)
+npm run db:fresh
+```
+
+### Documentation
+
+- **[Database Migration Guide](./docs/DATABASE_MIGRATION_GUIDE.md)** - Complete migration system documentation
+- **[Quick Reference](./docs/MIGRATION_QUICK_REFERENCE.md)** - Command cheat sheet
+- **[ERD Diagram](./docs/erd/erd.md)** - Database schema visualization
+
+### Migration Best Practices
+
+- Use `IF NOT EXISTS` for all CREATE statements
+- Use `INSERT OR IGNORE` for seed data
+- Test with `npm run db:fresh` before committing
+- Never edit migrations that have been applied
+
+See [Database Migration Guide](./docs/DATABASE_MIGRATION_GUIDE.md) for detailed workflows.
+
 ## Development
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

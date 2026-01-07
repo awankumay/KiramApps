@@ -26,7 +26,10 @@ const permissionDescriptions: Record<Permission, string> = {
   [Permission.UPDATE_LOADER_STATUS]: "Mengubah status loader",
   [Permission.MANAGE_USERS]: "Mengelola pengguna sistem",
   [Permission.MANAGE_ROLES]: "Mengelola role dan permission",
+  [Permission.MANAGE_ITEMS]: "Mengelola item dan harga",
   [Permission.VIEW_REPORTS]: "Melihat laporan sistem",
+  [Permission.MANAGE_CUSTOMERS]: "Mengelola data customer",
+  [Permission.MANAGE_VEHICLES]: "Mengelola data kendaraan",
 };
 
 // Role descriptions

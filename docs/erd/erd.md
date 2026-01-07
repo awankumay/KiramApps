@@ -103,9 +103,14 @@ erDiagram
         bigint transaction_id FK
         bigint payment_method_id FK
         decimal amount
-        string status "PENDING | PAID"
+        string status "PAID"
         datetime paid_at
         bigint verified_by FK
+        string notes
+        datetime created_at
+        string verification_status "PENDING | VERIFIED | REJECTED"
+        datetime verified_at
+        string rejection_reason
     }
 
     %% ======================
