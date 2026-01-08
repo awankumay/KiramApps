@@ -10,7 +10,10 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@Features/*": ["./src/Features/*"],
+      "@Shared/*": ["./src/Shared/*"],
+      "@App/*": ["./src/App/*"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

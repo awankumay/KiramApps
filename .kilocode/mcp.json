@@ -1,1 +1,33 @@
-{"mcpServers":{"shadcn":{"command":"npx","args":["shadcn@latest","mcp"],"alwaysAllow":["list_items_in_registries","get_add_command_for_items"]},"context7":{"command":"npx","args":["-y","@upstash/context7-mcp"],"env":{"DEFAULT_MINIMUM_TOKENS":""}}}}
+{
+  "mcpServers": {
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ],
+      "alwaysAllow": [
+        "list_items_in_registries",
+        "get_add_command_for_items"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
+    },
+    "sqlite": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "/c/Users/LENOVO/AppData/Roaming/kiram-site/app-data.db"
+      ]
+    }
+  }
+}

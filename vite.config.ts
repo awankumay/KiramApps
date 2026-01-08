@@ -6,9 +6,13 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: "./", // Use relative paths for Electron file:// protocol
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@Features": path.resolve(__dirname, "./src/Features"),
+      "@Shared": path.resolve(__dirname, "./src/Shared"),
+      "@App": path.resolve(__dirname, "./src/App"),
     },
   },
   plugins: [
@@ -18,6 +22,16 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: "electron/main.ts",
+        vite: {
+          build: {
+            rollupOptions: {
+              external: ["sharp"],
+              output: {
+                format: "cjs", // Use CommonJS for better compatibility
+              },
+            },
+          },
+        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.

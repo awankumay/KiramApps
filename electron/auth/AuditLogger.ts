@@ -6,6 +6,23 @@ const BetterSqlite3 = require("better-sqlite3");
 
 type DatabaseInstance = ReturnType<typeof BetterSqlite3>;
 
+interface AuthEventRow {
+  id: number;
+  eventType:
+    | "LOGIN"
+    | "LOGOUT"
+    | "REFRESH"
+    | "VALIDATION_FAILURE"
+    | "TOKEN_EXPIRED";
+  userId: number | null;
+  username: string | null;
+  success: number;
+  errorMessage: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
 export interface AuthEvent {
   eventType:
     | "LOGIN"
@@ -121,17 +138,17 @@ export class AuditLogger {
         LIMIT ?
       `);
 
-      const rows = stmt.all(limit) as any[];
+      const rows = stmt.all(limit) as AuthEventRow[];
 
       return rows.map((row) => ({
         id: row.id,
         eventType: row.eventType,
-        userId: row.userId,
-        username: row.username,
+        userId: row.userId ?? undefined,
+        username: row.username ?? undefined,
         success: Boolean(row.success),
-        errorMessage: row.errorMessage,
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent,
+        errorMessage: row.errorMessage ?? undefined,
+        ipAddress: row.ipAddress ?? undefined,
+        userAgent: row.userAgent ?? undefined,
         createdAt: row.createdAt,
       }));
     } catch (error) {
@@ -159,17 +176,17 @@ export class AuditLogger {
         LIMIT ?
       `);
 
-      const rows = stmt.all(userId, limit) as any[];
+      const rows = stmt.all(userId, limit) as AuthEventRow[];
 
       return rows.map((row) => ({
         id: row.id,
         eventType: row.eventType,
-        userId: row.userId,
-        username: row.username,
+        userId: row.userId ?? undefined,
+        username: row.username ?? undefined,
         success: Boolean(row.success),
-        errorMessage: row.errorMessage,
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent,
+        errorMessage: row.errorMessage ?? undefined,
+        ipAddress: row.ipAddress ?? undefined,
+        userAgent: row.userAgent ?? undefined,
         createdAt: row.createdAt,
       }));
     } catch (error) {
