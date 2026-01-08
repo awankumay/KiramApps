@@ -1,3 +1,5 @@
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Enhance Payment Verification
  * Created: 2026-01-07
@@ -9,7 +11,10 @@
  * - Indexes for performance
  * - Backfills existing data based on verified_by field
  */
-export async function up({ db }) {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }) {
     // Add verification_status column
     db.exec(`
     ALTER TABLE payments 
@@ -53,8 +58,11 @@ export async function up({ db }) {
     CREATE INDEX IF NOT EXISTS idx_payments_transaction_verification 
     ON payments(transaction_id, verification_status)
   `);
-}
-export async function down({ db }) {
+};
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }) {
     // Drop indexes
     db.exec(`DROP INDEX IF EXISTS idx_payments_transaction_verification`);
     db.exec(`DROP INDEX IF EXISTS idx_payments_verified_at`);
@@ -97,4 +105,4 @@ export async function down({ db }) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_payment_method_id ON payments(payment_method_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at)`);
-}
+};

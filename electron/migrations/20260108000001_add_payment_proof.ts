@@ -1,20 +1,25 @@
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Add Payment Proof Image Path
  * Created: 2026-01-08
  *
  * Adds proof_image_path column to payments table to store payment proof images
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Add proof_image_path column
   db.exec(`
     ALTER TABLE payments 
     ADD COLUMN proof_image_path TEXT
   `);
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // SQLite doesn't support ALTER TABLE DROP COLUMN directly
   // We need to recreate the table without the proof_image_path column
   db.exec(`
@@ -77,4 +82,4 @@ export async function down({ db }: MigrationContext): Promise<void> {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_payments_transaction_verification ON payments(transaction_id, verification_status)`
   );
-}
+};

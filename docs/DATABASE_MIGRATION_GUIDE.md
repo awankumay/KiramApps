@@ -99,13 +99,15 @@ Ini akan generate file: `electron/migrations/20260106123456_add_transactions_tab
 Template migration (TypeScript):
 
 ```typescript
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: add_transactions_table
  * Created: 2026-01-06
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,12 +122,17 @@ export async function up({ db }: MigrationContext): Promise<void> {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer_id)`
   );
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   db.exec("DROP TABLE IF EXISTS transactions");
-}
+};
 ```
+
+**Note**: Migration files use CommonJS syntax (`module.exports`) for compatibility with Electron's Node.js runtime in production builds.
 
 ### 3. Menjalankan Pending Migrations
 
@@ -399,23 +406,39 @@ CREATE TABLE IF NOT EXISTS example (
 INSERT OR IGNORE INTO example (id, name) VALUES (1, 'Test');
 ```
 
-### TypeScript Migration (Future)
+### TypeScript Migration Format
+
+Migration files use CommonJS syntax for compatibility with Electron:
 
 ```typescript
-export const migration = {
-  version: "003",
-  name: "add_example_table",
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Migration: add_example_table
+ * Created: 2026-01-XX
+ */
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function({ db }: any) {
+  // Add your migration logic here
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS example (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL
+    )
+  `);
+};
 
-  up: () => {
-    // Currently not implemented
-    // Reserved for complex data transformations
-  },
-
-  down: () => {
-    // Rollback logic
-  },
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function({ db }: any) {
+  // Rollback logic
+  db.exec("DROP TABLE IF EXISTS example");
 };
 ```
+
+**Important**: Use CommonJS (`module.exports`) instead of ES Modules (`export`) to ensure compatibility with Electron's Node.js runtime in production builds.
 
 ## Advanced Topics
 

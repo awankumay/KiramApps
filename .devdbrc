@@ -2,5 +2,9 @@
   {
     "type": "sqlite",
     "path": "c:\\Users\\LENOVO\\AppData\\Roaming\\kiram-site\\app-data.db"
+  },
+  {
+    "type": "sqlite",
+    "path": "e:\\app-data.db"
   }
 ]

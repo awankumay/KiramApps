@@ -25,29 +25,34 @@ try {
   const filename = `${timestamp}_${migrationName}.ts`;
   const filePath = path.join(migrationsPath, filename);
 
-  const template = `import { MigrationContext } from "../database/migrator";
-
+  const template = `/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: ${migrationName}
  * Created: ${new Date().toISOString().split("T")[0]}
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function({ db }: any) {
   // Add your migration logic here
   // Example:
-  // await sequelize.query(\`
+  // db.exec(\`
   //   CREATE TABLE IF NOT EXISTS example (
   //     id INTEGER PRIMARY KEY AUTOINCREMENT,
   //     name TEXT NOT NULL,
   //     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   //   )
   // \`);
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function({ db }: any) {
   // Add your rollback logic here
   // Example:
-  // await sequelize.query(\`DROP TABLE IF EXISTS example\`);
-}
+  // db.exec(\`DROP TABLE IF EXISTS example\`);
+};
 `;
 
   fs.writeFileSync(filePath, template);

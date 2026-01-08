@@ -1,5 +1,5 @@
-import { createHash } from "crypto";
-import type { MigrationContext } from "../database/migrator";
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
+const { createHash } = require("crypto");
 
 /**
  * Migration: Seed Initial Data
@@ -10,12 +10,17 @@ import type { MigrationContext } from "../database/migrator";
 
 /**
  * Hash password using SHA256 (same as AuthManager)
+ * @param {string} password
+ * @returns {string}
  */
-function hashPassword(password: string): string {
+function hashPassword(password: any) {
   return createHash("sha256").update(password).digest("hex");
 }
 
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Seed dummy items data
   // db.exec(
   //   `INSERT OR IGNORE INTO items (name, unit, price, is_active) VALUES ('Pasir', 'm³', 150000, 1)`
@@ -234,9 +239,12 @@ export async function up({ db }: MigrationContext): Promise<void> {
   console.log("     • superadmin / password123 (SUPERADMIN)");
   console.log("     • checker1 / checker123 (CHECKER)");
   console.log("     • loader1 / loader123 (LOADER)");
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // Remove seeded data (in reverse order)
   db.exec(`DELETE FROM user_roles`);
   db.exec(`DELETE FROM role_permissions`);
@@ -246,4 +254,4 @@ export async function down({ db }: MigrationContext): Promise<void> {
   db.exec(`DELETE FROM vehicles`);
   db.exec(`DELETE FROM customers`);
   db.exec(`DELETE FROM items`);
-}
+};

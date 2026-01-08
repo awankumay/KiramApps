@@ -2,9 +2,66 @@ import { Umzug } from "umzug";
 import type { Database } from "better-sqlite3";
 import * as path from "path";
 import * as fs from "fs";
-import { createRequire } from "module";
+import { pathToFileURL } from "url";
+import { app } from "electron";
 
-const require = createRequire(import.meta.url);
+/**
+ * Resolve migrations directory path for both dev and production
+ */
+function resolveMigrationsPath(migrationsPath: string): string {
+  // If absolute path and exists, use it
+  if (path.isAbsolute(migrationsPath) && fs.existsSync(migrationsPath)) {
+    return migrationsPath;
+  }
+
+  // In production (packaged app), migrations are in resources
+  if (app.isPackaged) {
+    // Try unpacked asar first
+    const unpackedPath = path.join(
+      process.resourcesPath,
+      "app.asar.unpacked",
+      "dist-electron",
+      "migrations"
+    );
+    if (fs.existsSync(unpackedPath)) {
+      console.log("[Migration] Using unpacked migrations:", unpackedPath);
+      return unpackedPath;
+    }
+
+    // Try regular resources path
+    const resourcesPath = path.join(
+      process.resourcesPath,
+      "dist-electron",
+      "migrations"
+    );
+    if (fs.existsSync(resourcesPath)) {
+      console.log("[Migration] Using resources migrations:", resourcesPath);
+      return resourcesPath;
+    }
+
+    // Try app path
+    const appPath = path.join(app.getAppPath(), "dist-electron", "migrations");
+    if (fs.existsSync(appPath)) {
+      console.log("[Migration] Using app migrations:", appPath);
+      return appPath;
+    }
+  }
+
+  // Development mode - use provided path
+  const devPath = path.isAbsolute(migrationsPath)
+    ? migrationsPath
+    : path.resolve(migrationsPath);
+  if (fs.existsSync(devPath)) {
+    console.log("[Migration] Using dev migrations:", devPath);
+    return devPath;
+  }
+
+  throw new Error(
+    `Migrations directory not found. Tried: ${migrationsPath}, ${
+      process.resourcesPath
+    }, ${app.getAppPath()}`
+  );
+}
 
 /**
  * Migration context - provides database instance to migrations
@@ -66,15 +123,43 @@ export function createMigrator(
   db: Database,
   migrationsPath: string
 ): Umzug<MigrationContext> {
+  const resolvedPath = resolveMigrationsPath(migrationsPath);
+  console.log("[Migration] Using migrations directory:", resolvedPath);
+
   return new Umzug({
     migrations: {
-      glob: ["*.js", { cwd: migrationsPath }],
+      glob: ["*.js", { cwd: resolvedPath }],
       resolve: ({ name, path: migrationPath, context }) => {
-        const migration = require(migrationPath!);
         return {
           name,
-          up: async () => migration.up(context),
-          down: async () => migration.down(context),
+          up: async () => {
+            try {
+              console.log(`[Migration] Running ${name}`);
+              // Use dynamic import with file URL for ES modules
+              const fileUrl = pathToFileURL(migrationPath!).href;
+              const migration = await import(fileUrl);
+              return await migration.up(context);
+            } catch (error) {
+              console.error(
+                `[Migration] Failed to run migration ${name}:`,
+                error
+              );
+              throw error;
+            }
+          },
+          down: async () => {
+            try {
+              const fileUrl = pathToFileURL(migrationPath!).href;
+              const migration = await import(fileUrl);
+              return await migration.down(context);
+            } catch (error) {
+              console.error(
+                `[Migration] Failed to rollback migration ${name}:`,
+                error
+              );
+              throw error;
+            }
+          },
         };
       },
     },
@@ -93,7 +178,11 @@ export class MigrationRunner {
 
   constructor(db: Database, migrationsPath: string) {
     this.db = db;
-    this.migrationsPath = migrationsPath;
+    this.migrationsPath = resolveMigrationsPath(migrationsPath);
+    console.log(
+      "[MigrationRunner] Using migrations directory:",
+      this.migrationsPath
+    );
   }
 
   private createMigrator(): Umzug<MigrationContext> {
@@ -101,11 +190,29 @@ export class MigrationRunner {
       migrations: {
         glob: ["*.js", { cwd: this.migrationsPath }],
         resolve: ({ name, path: migrationPath, context }) => {
-          const migration = require(migrationPath!);
           return {
             name,
-            up: async () => migration.up(context),
-            down: async () => migration.down(context),
+            up: async () => {
+              try {
+                // Use dynamic import with file URL for ES modules
+                const fileUrl = pathToFileURL(migrationPath!).href;
+                const migration = await import(fileUrl);
+                return await migration.up(context);
+              } catch (error) {
+                console.error(`Failed to run migration ${name}:`, error);
+                throw error;
+              }
+            },
+            down: async () => {
+              try {
+                const fileUrl = pathToFileURL(migrationPath!).href;
+                const migration = await import(fileUrl);
+                return await migration.down(context);
+              } catch (error) {
+                console.error(`Failed to rollback migration ${name}:`, error);
+                throw error;
+              }
+            },
           };
         },
       },

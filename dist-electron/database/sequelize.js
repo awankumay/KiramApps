@@ -1,18 +1,57 @@
-import { app } from "electron";
-import * as path from "path";
-import * as fs from "fs";
-import * as os from "os";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDatabasePath = getDatabasePath;
+exports.getDatabase = getDatabase;
+exports.closeDatabase = closeDatabase;
+exports.createDatabase = createDatabase;
+const electron_1 = require("electron");
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
+const module_1 = require("module");
+const require = (0, module_1.createRequire)(import.meta.url);
 const BetterSqlite3 = require("better-sqlite3");
 let dbInstance = null;
 /**
  * Get database path based on environment
  */
-export function getDatabasePath() {
+function getDatabasePath() {
     // In Electron main process
-    if (app) {
-        const userDataPath = app.getPath("userData");
+    if (electron_1.app) {
+        const userDataPath = electron_1.app.getPath("userData");
         return path.join(userDataPath, "app-data.db");
     }
     // Fallback for CLI scripts (outside Electron context)
@@ -38,7 +77,7 @@ export function getDatabasePath() {
 /**
  * Get database instance (singleton pattern)
  */
-export function getDatabase() {
+function getDatabase() {
     if (!dbInstance) {
         const dbPath = getDatabasePath();
         // Ensure directory exists
@@ -58,7 +97,7 @@ export function getDatabase() {
 /**
  * Close database connection
  */
-export function closeDatabase() {
+function closeDatabase() {
     if (dbInstance) {
         dbInstance.close();
         dbInstance = null;
@@ -68,7 +107,7 @@ export function closeDatabase() {
 /**
  * Create new database connection (for CLI scripts)
  */
-export function createDatabase(dbPath) {
+function createDatabase(dbPath) {
     const path = dbPath || getDatabasePath();
     // Ensure directory exists
     const dbDir = require("path").dirname(path);

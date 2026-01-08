@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
+    "module": "CommonJS",
     "moduleResolution": "Node",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -11,6 +11,6 @@
     "rootDir": "./electron",
     "declaration": false
   },
-  "include": ["electron/migrations/**/*.ts", "electron/database/**/*.ts"],
+  "include": ["electron/migrations/**/*.ts"],
   "exclude": ["node_modules"]
 }

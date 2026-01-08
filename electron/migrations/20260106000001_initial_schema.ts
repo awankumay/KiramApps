@@ -1,10 +1,12 @@
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Initial Database Schema
  * Created: 2026-01-06
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Create auth_sessions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -39,10 +41,18 @@ export async function up({ db }: MigrationContext): Promise<void> {
   `);
 
   // Create auth session indexes
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_is_active ON auth_sessions(is_active)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_auth_events_user_id ON auth_events(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_auth_events_created_at ON auth_events(created_at)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_auth_sessions_is_active ON auth_sessions(is_active)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_auth_events_user_id ON auth_events(user_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_auth_events_created_at ON auth_events(created_at)`
+  );
 
   // Create users table for local user management
   db.exec(`
@@ -92,8 +102,12 @@ export async function up({ db }: MigrationContext): Promise<void> {
   // Create item indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_items_name ON items(name)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_items_is_active ON items(is_active)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_price_history_item_id ON item_price_history(item_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_price_history_changed_at ON item_price_history(changed_at)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_price_history_item_id ON item_price_history(item_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_price_history_changed_at ON item_price_history(changed_at)`
+  );
 
   // Create customers table
   db.exec(`
@@ -120,11 +134,21 @@ export async function up({ db }: MigrationContext): Promise<void> {
 
   // Create customer and vehicle indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_is_active ON customers(is_active)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vehicles_plate_number ON vehicles(plate_number)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vehicles_customer_id ON vehicles(customer_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vehicles_is_active ON vehicles(is_active)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_customers_category ON customers(category)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_customers_is_active ON customers(is_active)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vehicles_plate_number ON vehicles(plate_number)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vehicles_customer_id ON vehicles(customer_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vehicles_is_active ON vehicles(is_active)`
+  );
 
   // Create RBAC tables
   db.exec(`
@@ -169,13 +193,24 @@ export async function up({ db }: MigrationContext): Promise<void> {
   `);
 
   // Create RBAC indexes
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id)`);
-}
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id)`
+  );
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // Drop tables in reverse order (due to foreign key constraints)
   db.exec(`DROP TABLE IF EXISTS user_roles`);
   db.exec(`DROP TABLE IF EXISTS role_permissions`);
@@ -188,4 +223,4 @@ export async function down({ db }: MigrationContext): Promise<void> {
   db.exec(`DROP TABLE IF EXISTS users`);
   db.exec(`DROP TABLE IF EXISTS auth_events`);
   db.exec(`DROP TABLE IF EXISTS auth_sessions`);
-}
+};

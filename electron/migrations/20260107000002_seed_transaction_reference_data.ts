@@ -1,5 +1,4 @@
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Seed Transaction Reference Data
  * Created: 2026-01-07
@@ -8,7 +7,10 @@ import type { MigrationContext } from "../database/migrator";
  * - Transaction types (PENJUALAN, PENGIRIMAN)
  * - Payment methods (CASH, TRANSFER, QRIS)
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Seed transaction types
   db.exec(
     `INSERT OR IGNORE INTO transaction_types (id, name) VALUES (1, 'PENJUALAN')`
@@ -31,10 +33,13 @@ export async function up({ db }: MigrationContext): Promise<void> {
   console.log("✅ Seeded transaction reference data:");
   console.log("   - 2 transaction types (PENJUALAN, PENGIRIMAN)");
   console.log("   - 3 payment methods (CASH, TRANSFER, QRIS)");
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // Remove seeded data
   db.exec(`DELETE FROM payment_methods`);
   db.exec(`DELETE FROM transaction_types`);
-}
+};

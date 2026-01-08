@@ -1,8 +1,13 @@
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Initial Database Schema
  * Created: 2026-01-06
  */
-export async function up({ db }) {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }) {
     // Create auth_sessions table
     db.exec(`
     CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -156,8 +161,11 @@ export async function up({ db }) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id)`);
-}
-export async function down({ db }) {
+};
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }) {
     // Drop tables in reverse order (due to foreign key constraints)
     db.exec(`DROP TABLE IF EXISTS user_roles`);
     db.exec(`DROP TABLE IF EXISTS role_permissions`);
@@ -170,4 +178,4 @@ export async function down({ db }) {
     db.exec(`DROP TABLE IF EXISTS users`);
     db.exec(`DROP TABLE IF EXISTS auth_events`);
     db.exec(`DROP TABLE IF EXISTS auth_sessions`);
-}
+};

@@ -1,5 +1,4 @@
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Enhance Payment Proof Storage with Redundancy
  * Created: 2026-01-08
@@ -14,7 +13,10 @@ import type { MigrationContext } from "../database/migrator";
  *
  * This ensures payment proofs are never lost even if file system fails
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Add proof_thumbnail column (base64 compressed version as backup)
   db.exec(`
     ALTER TABLE payments 
@@ -56,9 +58,12 @@ export async function up({ db }: MigrationContext): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_payments_proof_uploaded_at 
     ON payments(proof_uploaded_at DESC)
   `);
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // Drop index
   db.exec(`DROP INDEX IF EXISTS idx_payments_proof_uploaded_at`);
 
@@ -125,4 +130,4 @@ export async function down({ db }: MigrationContext): Promise<void> {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_payments_transaction_verification ON payments(transaction_id, verification_status)`
   );
-}
+};

@@ -1,3 +1,5 @@
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Add Transaction Tables
  * Created: 2026-01-07
@@ -10,7 +12,10 @@
  * - payments: Payment records for transactions
  * - transaction_status_logs: Status change history
  */
-export async function up({ db }) {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }) {
     // Create transaction_types table
     db.exec(`
     CREATE TABLE IF NOT EXISTS transaction_types (
@@ -114,8 +119,11 @@ export async function up({ db }) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_transaction_status_logs_transaction_id ON transaction_status_logs(transaction_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_transaction_status_logs_changed_by ON transaction_status_logs(changed_by)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_transaction_status_logs_changed_at ON transaction_status_logs(changed_at)`);
-}
-export async function down({ db }) {
+};
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }) {
     // Drop tables in reverse order (due to foreign key constraints)
     db.exec(`DROP TABLE IF EXISTS transaction_status_logs`);
     db.exec(`DROP TABLE IF EXISTS payments`);
@@ -123,4 +131,4 @@ export async function down({ db }) {
     db.exec(`DROP TABLE IF EXISTS transactions`);
     db.exec(`DROP TABLE IF EXISTS payment_methods`);
     db.exec(`DROP TABLE IF EXISTS transaction_types`);
-}
+};

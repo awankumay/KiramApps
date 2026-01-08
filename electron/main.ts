@@ -5,6 +5,7 @@ import path from "node:path";
 import * as fs from "fs";
 import { createDatabase } from "./auth/database";
 import { AuthManager } from "./auth/AuthManager";
+import { runMigrations } from "./database/index";
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,9 +76,41 @@ app.on("activate", () => {
 });
 
 // Initialize authentication system
-function initializeAuth() {
-  const db = createDatabase();
-  authManager = new AuthManager(db);
+async function initializeAuth() {
+  try {
+    console.log("Initializing database...");
+    const db = createDatabase();
+
+    // Run pending migrations on startup - ONLY in production
+    // In development, use `npm run db:migrate` manually
+    const isProduction = !VITE_DEV_SERVER_URL;
+
+    if (isProduction) {
+      console.log("Running database migrations (production mode)...");
+      await runMigrations(db);
+      console.log("Database migrations completed successfully");
+    } else {
+      console.log("Skipping auto-migration in development mode");
+      console.log("Run 'npm run db:migrate' manually if needed");
+    }
+
+    authManager = new AuthManager(db);
+    console.log("Authentication system initialized");
+  } catch (error) {
+    console.error("Failed to initialize authentication system:", error);
+    // Show error dialog to user - only in production
+    const isProduction = !VITE_DEV_SERVER_URL;
+    if (isProduction) {
+      dialog.showErrorBox(
+        "Database Initialization Error",
+        `Failed to initialize database: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }\n\nPlease contact support if this problem persists.`
+      );
+    }
+    // In development, just log and continue
+    console.log("Continuing without database in development mode...");
+  }
 }
 
 // Setup IPC handlers for authentication
@@ -1695,8 +1728,8 @@ function setupAuthHandlers() {
   );
 }
 
-app.whenReady().then(() => {
-  initializeAuth();
+app.whenReady().then(async () => {
+  await initializeAuth();
   setupAuthHandlers();
   createWindow();
 });

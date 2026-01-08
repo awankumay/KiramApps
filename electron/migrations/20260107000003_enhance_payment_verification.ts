@@ -1,5 +1,4 @@
-import type { MigrationContext } from "../database/migrator";
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Enhance Payment Verification
  * Created: 2026-01-07
@@ -11,7 +10,10 @@ import type { MigrationContext } from "../database/migrator";
  * - Indexes for performance
  * - Backfills existing data based on verified_by field
  */
-export async function up({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }: any) {
   // Add verification_status column
   db.exec(`
     ALTER TABLE payments 
@@ -62,9 +64,12 @@ export async function up({ db }: MigrationContext): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_payments_transaction_verification 
     ON payments(transaction_id, verification_status)
   `);
-}
+};
 
-export async function down({ db }: MigrationContext): Promise<void> {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }: any) {
   // Drop indexes
   db.exec(`DROP INDEX IF EXISTS idx_payments_transaction_verification`);
   db.exec(`DROP INDEX IF EXISTS idx_payments_verified_at`);
@@ -118,4 +123,4 @@ export async function down({ db }: MigrationContext): Promise<void> {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at)`
   );
-}
+};

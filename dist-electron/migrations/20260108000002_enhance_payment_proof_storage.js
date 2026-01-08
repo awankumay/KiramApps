@@ -1,3 +1,5 @@
+"use strict";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Migration: Enhance Payment Proof Storage with Redundancy
  * Created: 2026-01-08
@@ -12,7 +14,10 @@
  *
  * This ensures payment proofs are never lost even if file system fails
  */
-export async function up({ db }) {
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.up = async function ({ db }) {
     // Add proof_thumbnail column (base64 compressed version as backup)
     db.exec(`
     ALTER TABLE payments 
@@ -48,8 +53,11 @@ export async function up({ db }) {
     CREATE INDEX IF NOT EXISTS idx_payments_proof_uploaded_at 
     ON payments(proof_uploaded_at DESC)
   `);
-}
-export async function down({ db }) {
+};
+/**
+ * @param {{ db: import('better-sqlite3').Database }} context
+ */
+module.exports.down = async function ({ db }) {
     // Drop index
     db.exec(`DROP INDEX IF EXISTS idx_payments_proof_uploaded_at`);
     // SQLite doesn't support ALTER TABLE DROP COLUMN directly
@@ -99,4 +107,4 @@ export async function down({ db }) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_verification_status ON payments(verification_status)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_verified_at ON payments(verified_at DESC)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_transaction_verification ON payments(transaction_id, verification_status)`);
-}
+};

@@ -1,11 +1,12 @@
 {
   "name": "kiram-site",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0-dev",
+  "description": "KiramApps",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc && tsc -p tsconfig.migrations.json && node scripts/copy-migrations.js && vite build && electron-builder",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "rebuild": "electron-rebuild -f -w better-sqlite3",

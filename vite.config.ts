@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: "./", // Use relative paths for Electron file:// protocol
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -25,6 +26,9 @@ export default defineConfig({
           build: {
             rollupOptions: {
               external: ["sharp"],
+              output: {
+                format: "cjs", // Use CommonJS for better compatibility
+              },
             },
           },
         },
