@@ -4,6 +4,8 @@
 
 KiramApps menggunakan sistem migrasi database berbasis **Umzug + better-sqlite3** untuk mengelola perubahan schema dan data secara terstruktur. Sistem ini mencegah duplikasi data dan memastikan semua perubahan database ter-versi dengan baik.
 
+> **Important**: For detailed information about module system setup (CommonJS vs ES Modules) for development and production, see [MODULE_SYSTEM_GUIDE.md](./MODULE_SYSTEM_GUIDE.md).
+
 ## Konsep Dasar
 
 ### Apa itu Database Migration?
@@ -419,7 +421,7 @@ Migration files use CommonJS syntax for compatibility with Electron:
 /**
  * @param {{ db: import('better-sqlite3').Database }} context
  */
-module.exports.up = async function({ db }: any) {
+module.exports.up = async function ({ db }: any) {
   // Add your migration logic here
   db.exec(`
     CREATE TABLE IF NOT EXISTS example (
@@ -432,7 +434,7 @@ module.exports.up = async function({ db }: any) {
 /**
  * @param {{ db: import('better-sqlite3').Database }} context
  */
-module.exports.down = async function({ db }: any) {
+module.exports.down = async function ({ db }: any) {
   // Rollback logic
   db.exec("DROP TABLE IF EXISTS example");
 };

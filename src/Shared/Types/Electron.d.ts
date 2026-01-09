@@ -102,6 +102,7 @@ export interface CustomerData {
   id: number;
   name: string;
   category: string;
+  code: string;
   is_active: boolean;
   created_at: string;
 }
@@ -109,11 +110,13 @@ export interface CustomerData {
 export interface CreateCustomerData {
   name: string;
   category: string;
+  code: string;
 }
 
 export interface UpdateCustomerData {
   name?: string;
   category?: string;
+  code?: string;
   is_active?: boolean;
 }
 
@@ -151,13 +154,52 @@ export type TransactionStatus =
 export interface TransactionTypeData {
   id: number;
   name: string;
-  createdAt: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface PaymentMethodData {
   id: number;
   name: string;
-  createdAt: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface LoaderData {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CreateTransactionTypeData {
+  name: string;
+  is_active?: boolean;
+}
+
+export interface UpdateTransactionTypeData {
+  name?: string;
+  is_active?: boolean;
+}
+
+export interface CreatePaymentMethodData {
+  name: string;
+  is_active?: boolean;
+}
+
+export interface UpdatePaymentMethodData {
+  name?: string;
+  is_active?: boolean;
+}
+
+export interface CreateLoaderData {
+  name: string;
+  is_active?: boolean;
+}
+
+export interface UpdateLoaderData {
+  name?: string;
+  is_active?: boolean;
 }
 
 export interface TransactionData {
@@ -462,9 +504,64 @@ declare global {
       };
       transactionTypes: {
         getAll: () => Promise<ApiResponse<TransactionTypeData[]>>;
+        getById: (id: number) => Promise<ApiResponse<TransactionTypeData>>;
+        create: (
+          data: CreateTransactionTypeData
+        ) => Promise<ApiResponse<TransactionTypeData>>;
+        update: (
+          id: number,
+          data: UpdateTransactionTypeData
+        ) => Promise<ApiResponse<TransactionTypeData>>;
+        delete: (id: number) => Promise<ApiResponse<void>>;
+        getActive: () => Promise<ApiResponse<TransactionTypeData[]>>;
       };
       paymentMethods: {
-        getAll: () => Promise<ApiResponse<PaymentMethodData[]>>;
+        getAll: (filters?: {
+          name?: string;
+          is_active?: boolean;
+          page?: number;
+          limit?: number;
+        }) => Promise<
+          ApiResponse<{
+            paymentMethods: PaymentMethodData[];
+            total: number;
+            page: number;
+            limit: number;
+          }>
+        >;
+        getById: (id: number) => Promise<ApiResponse<PaymentMethodData>>;
+        create: (
+          data: CreatePaymentMethodData
+        ) => Promise<ApiResponse<PaymentMethodData>>;
+        update: (
+          id: number,
+          data: UpdatePaymentMethodData
+        ) => Promise<ApiResponse<PaymentMethodData>>;
+        delete: (id: number) => Promise<ApiResponse<void>>;
+        getActive: () => Promise<ApiResponse<PaymentMethodData[]>>;
+      };
+      loaders: {
+        getAll: (filters?: {
+          name?: string;
+          is_active?: boolean;
+          page?: number;
+          limit?: number;
+        }) => Promise<
+          ApiResponse<{
+            loaders: LoaderData[];
+            total: number;
+            page: number;
+            limit: number;
+          }>
+        >;
+        getById: (id: number) => Promise<ApiResponse<LoaderData>>;
+        create: (data: CreateLoaderData) => Promise<ApiResponse<LoaderData>>;
+        update: (
+          id: number,
+          data: UpdateLoaderData
+        ) => Promise<ApiResponse<LoaderData>>;
+        delete: (id: number) => Promise<ApiResponse<void>>;
+        getActive: () => Promise<ApiResponse<LoaderData[]>>;
       };
       payments: {
         getPending: (filters?: PaymentFilters) => Promise<

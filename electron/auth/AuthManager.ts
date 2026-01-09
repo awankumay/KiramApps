@@ -7,6 +7,8 @@ import { ItemsManager } from "./ItemsManager";
 import { CustomerManager } from "./CustomerManager";
 import { VehicleManager } from "./VehicleManager";
 import { TransactionManager } from "./TransactionManager";
+import { PaymentManager } from "./PaymentManager";
+import { LoaderManager } from "./LoaderManager";
 import { createRequire } from "module";
 import { createHash } from "crypto";
 
@@ -48,6 +50,8 @@ export class AuthManager {
   private customerManager: CustomerManager;
   private vehicleManager: VehicleManager;
   private transactionManager: TransactionManager;
+  private paymentManager: PaymentManager;
+  private loaderManager: LoaderManager;
   private db: DatabaseInstance;
 
   constructor(db: DatabaseInstance) {
@@ -61,6 +65,8 @@ export class AuthManager {
     this.customerManager = new CustomerManager(db);
     this.vehicleManager = new VehicleManager(db);
     this.transactionManager = new TransactionManager(db);
+    this.paymentManager = new PaymentManager(db);
+    this.loaderManager = new LoaderManager(db);
   }
 
   /**
@@ -96,6 +102,20 @@ export class AuthManager {
    */
   getTransactionManager(): TransactionManager {
     return this.transactionManager;
+  }
+
+  /**
+   * Get Payment manager for payment method management
+   */
+  getPaymentManager(): PaymentManager {
+    return this.paymentManager;
+  }
+
+  /**
+   * Get Loader manager for loader management
+   */
+  getLoaderManager(): LoaderManager {
+    return this.loaderManager;
   }
 
   /**

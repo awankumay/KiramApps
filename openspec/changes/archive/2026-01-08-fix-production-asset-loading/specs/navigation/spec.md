@@ -1,6 +1,6 @@
 # Navigation Spec Delta
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Client-Side Routing Strategy
 

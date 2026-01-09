@@ -1,6 +1,6 @@
 # Project Structure Spec Delta
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Build Configuration for Electron Production
 

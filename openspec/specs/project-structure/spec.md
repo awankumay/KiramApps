@@ -114,3 +114,23 @@ The system SHALL configure TypeScript path aliases for cleaner imports.
 
 ---
 
+### Requirement: Developer Documentation for Asset Loading and Routing
+
+The project documentation SHALL include troubleshooting guidance for asset loading and routing issues in Electron production builds.
+
+#### Scenario: Developer encounters asset loading issue
+
+- **GIVEN** a developer experiences asset loading failures in production
+- **WHEN** consulting the project documentation
+- **THEN** clear instructions SHALL be available explaining the `base: "./"` requirement
+- **AND** troubleshooting steps SHALL guide diagnosis using DevTools Network tab
+- **AND** expected vs. incorrect URL patterns SHALL be documented with examples
+
+#### Scenario: Developer needs to understand routing strategy
+
+- **GIVEN** a developer is working with React Router in the Electron app
+- **WHEN** consulting the project documentation
+- **THEN** clear explanation SHALL be provided for using `HashRouter` instead of `BrowserRouter`
+- **AND** rationale SHALL explain `file://` protocol limitations with browser history API
+- **AND** examples SHALL show correct hash-based URL patterns
+

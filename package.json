@@ -16,8 +16,8 @@
     "db:migrate": "npm run rebuild:node && npm run migration:compile && npm run migration:run && npm run rebuild",
     "migration:compile": "tsc -p tsconfig.migrations.json",
     "migration:create": "node scripts/migration-create.js",
-    "migration:status": "npm run rebuild:node && npm run migration:compile && node scripts/migration-status.js",
-    "migration:run": "node scripts/migration-run.js"
+    "migration:status": "npm run rebuild:node && npm run migration:compile && node scripts/migration-status.cjs",
+    "migration:run": "node scripts/migration-run.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

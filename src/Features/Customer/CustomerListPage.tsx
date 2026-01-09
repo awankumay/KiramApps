@@ -78,12 +78,14 @@ const CATEGORY_OPTIONS = [
 interface CustomerFormData {
   name: string;
   category: CustomerCategory;
+  code: string;
   is_active: boolean;
 }
 
 const initialFormData: CustomerFormData = {
   name: "",
   category: CustomerCategory.PERSONAL,
+  code: "",
   is_active: true,
 };
 
@@ -139,11 +141,14 @@ export function CustomerListPage() {
   }, [fetchData]);
 
   // Filter customers based on search and category
-  const filteredCustomers = customers.filter(
-    (customer) =>
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      (!categoryFilter || customer.category === categoryFilter)
-  );
+  const filteredCustomers =
+    customers?.filter(
+      (customer) =>
+        customer &&
+        customer.name &&
+        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        (!categoryFilter || customer.category === categoryFilter)
+    ) || [];
 
   // Stats
   const totalCustomers = customers.length;
@@ -164,6 +169,17 @@ export function CustomerListPage() {
       errors.category = "Kategori wajib dipilih";
     }
 
+    if (!formData.code.trim()) {
+      errors.code = "Code wajib diisi";
+    } else if (!/^[A-Z0-9_-]+$/.test(formData.code)) {
+      errors.code =
+        "Code hanya boleh mengandung huruf kapital, angka, underscore, dan dash";
+    } else if (formData.code.length < 2) {
+      errors.code = "Code minimal 2 karakter";
+    } else if (formData.code.length > 50) {
+      errors.code = "Code maksimal 50 karakter";
+    }
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -177,6 +193,7 @@ export function CustomerListPage() {
       const createData: CreateCustomerData = {
         name: formData.name.trim(),
         category: formData.category,
+        code: formData.code.trim().toUpperCase(),
       };
 
       const res = await window.api.customers.create(createData);
@@ -211,6 +228,7 @@ export function CustomerListPage() {
       const updateData: UpdateCustomerData = {
         name: formData.name.trim(),
         category: formData.category,
+        code: formData.code.trim().toUpperCase(),
         is_active: formData.is_active,
       };
 
@@ -306,6 +324,7 @@ export function CustomerListPage() {
     setFormData({
       name: customer.name,
       category: customer.category as CustomerCategory,
+      code: customer.code || "",
       is_active: customer.is_active,
     });
     setFormErrors({});
@@ -347,6 +366,28 @@ export function CustomerListPage() {
   // Render form fields - inlined to prevent re-render issues
   const renderFormFields = () => (
     <div className="grid gap-4 py-4">
+      <div className="space-y-2">
+        <Label htmlFor="code">Code</Label>
+        <Input
+          id="code"
+          name="code"
+          value={formData.code}
+          onChange={(e) =>
+            setFormData((prev) => ({
+              ...prev,
+              code: e.target.value.toUpperCase(),
+            }))
+          }
+          placeholder="Contoh: CUST001"
+          className={formErrors.code ? "border-destructive" : ""}
+        />
+        <p className="text-xs text-muted-foreground">
+          Hanya huruf kapital, angka, underscore (_), dan dash (-)
+        </p>
+        {formErrors.code && (
+          <p className="text-sm text-destructive">{formErrors.code}</p>
+        )}
+      </div>
       <div className="space-y-2">
         <Label htmlFor="name">Nama Customer</Label>
         <Input
@@ -530,6 +571,7 @@ export function CustomerListPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Code</TableHead>
                     <TableHead>Nama Customer</TableHead>
                     <TableHead>Kategori</TableHead>
                     <TableHead>Status</TableHead>
@@ -541,7 +583,7 @@ export function CustomerListPage() {
                   {filteredCustomers.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="text-center py-8 text-muted-foreground"
                       >
                         {searchQuery || categoryFilter
@@ -552,6 +594,11 @@ export function CustomerListPage() {
                   ) : (
                     filteredCustomers.map((customer) => (
                       <TableRow key={customer.id}>
+                        <TableCell>
+                          <code className="px-2 py-1 bg-muted rounded text-sm">
+                            {customer.code}
+                          </code>
+                        </TableCell>
                         <TableCell className="font-medium">
                           {customer.name}
                         </TableCell>

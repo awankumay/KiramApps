@@ -12,6 +12,14 @@ export const CustomerCreateSchema = z.object({
   category: z.nativeEnum(CustomerCategory, {
     message: "Kategori customer harus PERSONAL atau COMPANY",
   }),
+  code: z
+    .string()
+    .min(1, "Code wajib diisi")
+    .max(50, "Code maksimal 50 karakter")
+    .regex(
+      /^[A-Z0-9_-]+$/,
+      "Code hanya boleh mengandung huruf kapital, angka, underscore, dan dash"
+    ),
 });
 
 export const CustomerUpdateSchema = z.object({
@@ -25,6 +33,15 @@ export const CustomerUpdateSchema = z.object({
     .nativeEnum(CustomerCategory, {
       message: "Kategori customer harus PERSONAL atau COMPANY",
     })
+    .optional(),
+  code: z
+    .string()
+    .min(1, "Code wajib diisi")
+    .max(50, "Code maksimal 50 karakter")
+    .regex(
+      /^[A-Z0-9_-]+$/,
+      "Code hanya boleh mengandung huruf kapital, angka, underscore, dan dash"
+    )
     .optional(),
   is_active: z.boolean().optional(),
 });

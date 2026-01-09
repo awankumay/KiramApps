@@ -1,0 +1,555 @@
+{
+  "version": "1.0.0",
+  "darkMode": true,
+  "gridEnabling": false,
+  "detailLevel": "All",
+  "tablePositions": [
+    {
+      "name": "users",
+      "schemaName": "public",
+      "x": 0,
+      "y": 50
+    },
+    {
+      "name": "roles",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 50
+    },
+    {
+      "name": "user_roles",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 50
+    },
+    {
+      "name": "customers",
+      "schemaName": "public",
+      "x": 811.8388671875,
+      "y": 50
+    },
+    {
+      "name": "vehicles",
+      "schemaName": "public",
+      "x": 0,
+      "y": 292
+    },
+    {
+      "name": "items",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 196
+    },
+    {
+      "name": "price_lists",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 196
+    },
+    {
+      "name": "transaction_types",
+      "schemaName": "public",
+      "x": 811.8388671875,
+      "y": 324
+    },
+    {
+      "name": "payment_methods",
+      "schemaName": "public",
+      "x": 0,
+      "y": 534
+    },
+    {
+      "name": "transactions",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 406
+    },
+    {
+      "name": "transaction_items",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 470
+    },
+    {
+      "name": "payments",
+      "schemaName": "public",
+      "x": 811.8388671875,
+      "y": 470
+    },
+    {
+      "name": "loaders",
+      "schemaName": "public",
+      "x": 0,
+      "y": 680
+    },
+    {
+      "name": "loader_assignments",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 808
+    },
+    {
+      "name": "gate_logs",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 744
+    },
+    {
+      "name": "transaction_status_logs",
+      "schemaName": "public",
+      "x": 811.8388671875,
+      "y": 936
+    },
+    {
+      "name": "fraud_flags",
+      "schemaName": "public",
+      "x": 0,
+      "y": 826
+    },
+    {
+      "name": "devices",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 1114
+    },
+    {
+      "name": "local_users",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 1018
+    },
+    {
+      "name": "sync_jobs",
+      "schemaName": "public",
+      "x": 811.8388671875,
+      "y": 1210
+    },
+    {
+      "name": "sync_queue",
+      "schemaName": "public",
+      "x": 0,
+      "y": 1068
+    },
+    {
+      "name": "sync_logs",
+      "schemaName": "public",
+      "x": 273.5625,
+      "y": 1420
+    },
+    {
+      "name": "id_mappings",
+      "schemaName": "public",
+      "x": 560.15673828125,
+      "y": 1292
+    }
+  ],
+  "tableGroupCollapseStates": [],
+  "stickyNoteLayouts": [],
+  "referencePaths": [
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "users",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "user_id"
+      ],
+      "secondTableName": "user_roles",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "roles",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "role_id"
+      ],
+      "secondTableName": "user_roles",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "users",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "created_by"
+      ],
+      "secondTableName": "transactions",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "users",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "verified_by"
+      ],
+      "secondTableName": "payments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "users",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "operator_id"
+      ],
+      "secondTableName": "loader_assignments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "users",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "changed_by"
+      ],
+      "secondTableName": "transaction_status_logs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "customers",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "customer_id"
+      ],
+      "secondTableName": "vehicles",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "customers",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "customer_id"
+      ],
+      "secondTableName": "transactions",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "vehicles",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "vehicle_id"
+      ],
+      "secondTableName": "transactions",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "items",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "item_id"
+      ],
+      "secondTableName": "price_lists",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "items",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "item_id"
+      ],
+      "secondTableName": "transaction_items",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "transaction_items",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transaction_types",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_type_id"
+      ],
+      "secondTableName": "transactions",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "payment_methods",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "payment_method_id"
+      ],
+      "secondTableName": "payments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "payments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "loaders",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "loader_id"
+      ],
+      "secondTableName": "loader_assignments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "loader_assignments",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "transaction_status_logs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "gate_logs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "transaction_id"
+      ],
+      "secondTableName": "fraud_flags",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "device_id"
+      ],
+      "firstTableName": "devices",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "id"
+      ],
+      "secondTableName": "sync_jobs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "sync_jobs",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "id"
+      ],
+      "secondTableName": "sync_queue",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "sync_queue",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "id"
+      ],
+      "secondTableName": "sync_logs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "entity_id"
+      ],
+      "secondTableName": "sync_queue",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "id"
+      ],
+      "firstTableName": "transactions",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "entity_id"
+      ],
+      "secondTableName": "sync_logs",
+      "secondSchemaName": "public",
+      "secondRelation": "*",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "local_id"
+      ],
+      "firstTableName": "id_mappings",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "id"
+      ],
+      "secondTableName": "transactions",
+      "secondSchemaName": "public",
+      "secondRelation": "1",
+      "checkPoints": []
+    },
+    {
+      "firstFieldNames": [
+        "local_id"
+      ],
+      "firstTableName": "id_mappings",
+      "firstSchemaName": "public",
+      "firstRelation": "1",
+      "secondFieldNames": [
+        "id"
+      ],
+      "secondTableName": "local_users",
+      "secondSchemaName": "public",
+      "secondRelation": "1",
+      "checkPoints": []
+    }
+  ]
+}

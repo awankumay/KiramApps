@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 /* eslint-env node */
 
-import { Umzug } from "umzug";
-import path from "path";
-import fs from "fs";
-import os from "os";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
+const { Umzug } = require("umzug");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const BetterSqlite3 = require("better-sqlite3");
 
 /**

@@ -80,6 +80,7 @@ export class CustomerManager {
           id: number;
           name: string;
           category: string;
+          code: string;
           is_active: number;
           created_at: string;
         };
@@ -87,6 +88,7 @@ export class CustomerManager {
           id: customer.id,
           name: customer.name,
           category: customer.category,
+          code: customer.code,
           is_active: Boolean(customer.is_active),
           created_at: customer.created_at,
         };
@@ -107,6 +109,7 @@ export class CustomerManager {
       id: number;
       name: string;
       category: string;
+      code: string;
       is_active: number;
       created_at: string;
     } | null;
@@ -116,6 +119,7 @@ export class CustomerManager {
       id: customer.id,
       name: customer.name,
       category: customer.category,
+      code: customer.code,
       is_active: Boolean(customer.is_active),
       created_at: customer.created_at,
     };
@@ -124,15 +128,23 @@ export class CustomerManager {
   /**
    * Create new customer
    */
-  create(data: { name: string; category: string }) {
+  create(data: { name: string; category: string; code: string }) {
     // Validate input
     const validated = CustomerCreateSchema.parse(data);
 
+    // Check if code already exists
+    const existing = this.db
+      .prepare("SELECT id FROM customers WHERE code = ?")
+      .get(validated.code);
+    if (existing) {
+      throw new Error("Code already exists");
+    }
+
     const result = this.db
       .prepare(
-        "INSERT INTO customers (name, category, is_active) VALUES (?, ?, 1)"
+        "INSERT INTO customers (name, category, code, is_active) VALUES (?, ?, ?, 1)"
       )
-      .run(validated.name, validated.category);
+      .run(validated.name, validated.category, validated.code);
 
     return this.getById(result.lastInsertRowid as number);
   }
@@ -142,7 +154,12 @@ export class CustomerManager {
    */
   update(
     id: number,
-    data: { name?: string; category?: string; is_active?: boolean }
+    data: {
+      name?: string;
+      category?: string;
+      code?: string;
+      is_active?: boolean;
+    }
   ) {
     // Validate input
     const validated = CustomerUpdateSchema.parse({ id, ...data });
@@ -159,6 +176,18 @@ export class CustomerManager {
     if (validated.category !== undefined) {
       updates.push("category = ?");
       params.push(validated.category);
+    }
+
+    if (validated.code !== undefined) {
+      // Check if code already exists (excluding current record)
+      const existing = this.db
+        .prepare("SELECT id FROM customers WHERE code = ? AND id != ?")
+        .get(validated.code, id);
+      if (existing) {
+        throw new Error("Code already exists");
+      }
+      updates.push("code = ?");
+      params.push(validated.code);
     }
 
     if (validated.is_active !== undefined) {
@@ -200,6 +229,7 @@ export class CustomerManager {
         id: number;
         name: string;
         category: string;
+        code: string;
         is_active: number;
         created_at: string;
       };
@@ -207,6 +237,7 @@ export class CustomerManager {
         id: customer.id,
         name: customer.name,
         category: customer.category,
+        code: customer.code,
         is_active: Boolean(customer.is_active),
         created_at: customer.created_at,
       };
@@ -226,6 +257,7 @@ export class CustomerManager {
         id: number;
         name: string;
         category: string;
+        code: string;
         is_active: number;
         created_at: string;
       };
@@ -233,6 +265,7 @@ export class CustomerManager {
         id: customer.id,
         name: customer.name,
         category: customer.category,
+        code: customer.code,
         is_active: Boolean(customer.is_active),
         created_at: customer.created_at,
       };

@@ -21,13 +21,15 @@ export type TransactionStatus =
 export interface TransactionTypeData {
   id: number;
   name: string;
-  createdAt: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface PaymentMethodData {
   id: number;
   name: string;
-  createdAt: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface TransactionData {
@@ -981,14 +983,28 @@ export class TransactionManager {
         SELECT 
           id,
           name,
-          created_at as createdAt
+          is_active,
+          created_at
         FROM transaction_types
         ORDER BY name
       `
       )
       .all();
 
-    return types as TransactionTypeData[];
+    return (types as unknown[]).map((t) => {
+      const type = t as {
+        id: number;
+        name: string;
+        is_active: number;
+        created_at: string;
+      };
+      return {
+        id: type.id,
+        name: type.name,
+        is_active: Boolean(type.is_active),
+        created_at: type.created_at,
+      };
+    }) as TransactionTypeData[];
   }
 
   /**
@@ -1001,14 +1017,205 @@ export class TransactionManager {
         SELECT
           id,
           name,
-          created_at as createdAt
+          is_active,
+          created_at
         FROM payment_methods
         ORDER BY name
       `
       )
       .all();
 
-    return methods as PaymentMethodData[];
+    return (methods as unknown[]).map((m) => {
+      const method = m as {
+        id: number;
+        name: string;
+        is_active: number;
+        created_at: string;
+      };
+      return {
+        id: method.id,
+        name: method.name,
+        is_active: Boolean(method.is_active),
+        created_at: method.created_at,
+      };
+    }) as PaymentMethodData[];
+  }
+
+  /**
+   * Get transaction type by ID
+   */
+  getTransactionTypeById(id: number): TransactionTypeData | null {
+    const transactionType = this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          name,
+          is_active,
+          created_at
+        FROM transaction_types
+        WHERE id = ?
+      `
+      )
+      .get(id) as {
+      id: number;
+      name: string;
+      is_active: number;
+      created_at: string;
+    } | null;
+
+    if (!transactionType) return null;
+
+    return {
+      id: transactionType.id,
+      name: transactionType.name,
+      is_active: Boolean(transactionType.is_active),
+      created_at: transactionType.created_at,
+    };
+  }
+
+  /**
+   * Create new transaction type
+   */
+  createTransactionType(data: {
+    name: string;
+    is_active?: boolean;
+  }): TransactionTypeData | null {
+    const stmt = this.db.prepare(`
+      INSERT INTO transaction_types (name, is_active)
+      VALUES (?, ?)
+    `);
+
+    const result = stmt.run(
+      data.name,
+      data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+    );
+
+    const newType = this.getTransactionTypeById(
+      result.lastInsertRowid as number
+    );
+    if (!newType) {
+      throw new Error("Failed to create transaction type");
+    }
+
+    return newType;
+  }
+
+  /**
+   * Update existing transaction type
+   */
+  updateTransactionType(
+    id: number,
+    data: { name?: string; is_active?: boolean }
+  ): TransactionTypeData | null {
+    // Build dynamic update query
+    const updates: string[] = [];
+    const params: (string | number | boolean)[] = [];
+
+    if (data.name !== undefined) {
+      updates.push("name = ?");
+      params.push(data.name);
+    }
+
+    if (data.is_active !== undefined) {
+      updates.push("is_active = ?");
+      params.push(data.is_active ? 1 : 0);
+    }
+
+    if (updates.length === 0) {
+      return this.getTransactionTypeById(id);
+    }
+
+    params.push(id);
+    const query = `UPDATE transaction_types SET ${updates.join(
+      ", "
+    )} WHERE id = ?`;
+    this.db.prepare(query).run(...params);
+
+    return this.getTransactionTypeById(id);
+  }
+
+  /**
+   * Delete transaction type
+   */
+  deleteTransactionType(id: number): boolean {
+    const stmt = this.db.prepare(`
+      DELETE FROM transaction_types
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get active transaction types only
+   */
+  getActiveTransactionTypes(): TransactionTypeData[] {
+    const types = this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          name,
+          is_active,
+          created_at
+        FROM transaction_types
+        WHERE is_active = 1
+        ORDER BY name
+      `
+      )
+      .all();
+
+    return (types as unknown[]).map((t) => {
+      const tt = t as {
+        id: number;
+        name: string;
+        is_active: number;
+        created_at: string;
+      };
+      return {
+        id: tt.id,
+        name: tt.name,
+        is_active: Boolean(tt.is_active),
+        created_at: tt.created_at,
+      };
+    }) as TransactionTypeData[];
+  }
+
+  /**
+   * Get active payment methods only
+   */
+  getActivePaymentMethods(): PaymentMethodData[] {
+    const methods = this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          name,
+          is_active,
+          created_at
+        FROM payment_methods
+        WHERE is_active = 1
+        ORDER BY name
+      `
+      )
+      .all();
+
+    return (methods as unknown[]).map((pm) => {
+      const method = pm as {
+        id: number;
+        name: string;
+        is_active: number;
+        created_at: string;
+      };
+      return {
+        id: method.id,
+        name: method.name,
+        is_active: Boolean(method.is_active),
+        created_at: method.created_at,
+      };
+    }) as PaymentMethodData[];
   }
 
   /**

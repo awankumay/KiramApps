@@ -108,11 +108,16 @@ contextBridge.exposeInMainWorld("api", {
     }) => ipcRenderer.invoke("customers:getAll", filters || {}),
     getById: (customerId: number) =>
       ipcRenderer.invoke("customers:getById", customerId),
-    create: (customerData: { name: string; category: string }) =>
+    create: (customerData: { name: string; category: string; code: string }) =>
       ipcRenderer.invoke("customers:create", customerData),
     update: (
       customerId: number,
-      customerData: { name?: string; category?: string; is_active?: boolean }
+      customerData: {
+        name?: string;
+        category?: string;
+        code?: string;
+        is_active?: boolean;
+      }
     ) => ipcRenderer.invoke("customers:update", customerId, customerData),
     delete: (customerId: number) =>
       ipcRenderer.invoke("customers:delete", customerId),
@@ -218,9 +223,49 @@ contextBridge.exposeInMainWorld("api", {
   },
   transactionTypes: {
     getAll: () => ipcRenderer.invoke("transactionTypes:getAll"),
+    getById: (id: number) => ipcRenderer.invoke("transactionTypes:getById", id),
+    create: (data: { name: string; code: string; is_active?: boolean }) =>
+      ipcRenderer.invoke("transactionTypes:create", data),
+    update: (
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => ipcRenderer.invoke("transactionTypes:update", id, data),
+    delete: (id: number) => ipcRenderer.invoke("transactionTypes:delete", id),
+    getActive: () => ipcRenderer.invoke("transactionTypes:getActive"),
   },
   paymentMethods: {
-    getAll: () => ipcRenderer.invoke("paymentMethods:getAll"),
+    getAll: (filters?: {
+      name?: string;
+      is_active?: boolean;
+      page?: number;
+      limit?: number;
+    }) => ipcRenderer.invoke("paymentMethods:getAll", filters || {}),
+    getById: (id: number) => ipcRenderer.invoke("paymentMethods:getById", id),
+    create: (data: { name: string; code: string; is_active?: boolean }) =>
+      ipcRenderer.invoke("paymentMethods:create", data),
+    update: (
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => ipcRenderer.invoke("paymentMethods:update", id, data),
+    delete: (id: number) => ipcRenderer.invoke("paymentMethods:delete", id),
+    getActive: () => ipcRenderer.invoke("paymentMethods:getActive"),
+  },
+  loaders: {
+    getAll: (filters?: {
+      name?: string;
+      is_active?: boolean;
+      page?: number;
+      limit?: number;
+    }) => ipcRenderer.invoke("loaders:getAll", filters || {}),
+    getById: (id: number) => ipcRenderer.invoke("loaders:getById", id),
+    create: (data: { name: string; code: string; is_active?: boolean }) =>
+      ipcRenderer.invoke("loaders:create", data),
+    update: (
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => ipcRenderer.invoke("loaders:update", id, data),
+    delete: (id: number) => ipcRenderer.invoke("loaders:delete", id),
+    getActive: () => ipcRenderer.invoke("loaders:getActive"),
   },
   payments: {
     getPending: (filters?: {

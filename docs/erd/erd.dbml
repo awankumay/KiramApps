@@ -1,0 +1,266 @@
+// ======================
+// USER & ACCESS CONTROL
+// ======================
+
+Table users {
+  id bigint [pk]
+  name varchar
+  username varchar
+  is_active boolean
+  created_at datetime
+}
+
+Table roles {
+  id bigint [pk]
+  name varchar
+}
+
+Table user_roles {
+  user_id bigint
+  role_id bigint
+}
+
+// ======================
+// CUSTOMER & VEHICLE
+// ======================
+
+Table customers {
+  id bigint [pk]
+  code varchar [unique]
+  name varchar
+  category varchar // PERSONAL | COMPANY
+  is_active boolean
+  created_at datetime
+}
+
+Table vehicles {
+  id bigint [pk]
+  plate_number varchar [unique]
+  customer_id bigint
+  is_active boolean
+  created_at datetime
+}
+
+// ======================
+// ITEM & PRICING
+// ======================
+
+Table items {
+  id bigint [pk]
+  name varchar
+  unit varchar
+  is_active boolean
+}
+
+Table price_lists {
+  id bigint [pk]
+  item_id bigint
+  min_qty int
+  max_qty int
+  price decimal
+  effective_date date
+}
+
+// ======================
+// TRANSACTION CORE
+// ======================
+
+Table transaction_types {
+  id bigint [pk]
+  name varchar
+  is_active boolean
+}
+
+Table payment_methods {
+  id bigint [pk]
+  name varchar
+  is_active boolean
+}
+
+Table transactions {
+  id bigint [pk]
+  invoice_number varchar
+  transaction_type_id bigint
+  customer_id bigint
+  vehicle_id bigint
+  total_amount decimal
+  payment_status varchar // UNPAID | PAID
+  transaction_status varchar // CREATED | QUEUED | LOADING | DONE | CHECKED_OUT
+  created_by bigint
+  created_at datetime
+}
+
+Table transaction_items {
+  id bigint [pk]
+  transaction_id bigint
+  item_id bigint
+  qty int
+  price decimal
+  subtotal decimal
+}
+
+Table payments {
+  id bigint [pk]
+  transaction_id bigint
+  payment_method_id bigint
+  amount decimal
+  status varchar // PAID
+  paid_at datetime
+  verified_by bigint
+  notes varchar
+  created_at datetime
+  verification_status varchar // PENDING | VERIFIED | REJECTED
+  verified_at datetime
+  rejection_reason varchar
+}
+
+// ======================
+// LOADER OPERATION
+// ======================
+
+Table loaders {
+  id bigint [pk]
+  name varchar
+  is_active boolean
+}
+
+Table loader_assignments {
+  id bigint [pk]
+  transaction_id bigint
+  loader_id bigint
+  operator_id bigint
+  status varchar // WAITING | ON_PROGRESS | DONE
+  start_at datetime
+  end_at datetime
+}
+
+// ======================
+// GATE & AUDIT
+// ======================
+
+Table gate_logs {
+  id bigint [pk]
+  transaction_id bigint
+  gate_type varchar // IN | OUT
+  scan_method varchar // QR | LPR | RFID
+  status varchar // SUCCESS | FAILED
+  scan_at datetime
+}
+
+Table transaction_status_logs {
+  id bigint [pk]
+  transaction_id bigint
+  status varchar
+  changed_by bigint
+  changed_at datetime
+  note varchar
+}
+
+Table fraud_flags {
+  id bigint [pk]
+  transaction_id bigint
+  flag_type varchar
+  description varchar
+  created_at datetime
+}
+
+// ======================
+// OFFLINE SYNC LAYER
+// ======================
+
+Table devices {
+  device_id varchar [pk]
+  device_name varchar
+  location varchar
+  device_type varchar // GATE | CHECKER | LOADER
+  registered_at datetime
+  last_seen_at datetime
+  is_active boolean
+}
+
+Table local_users {
+  id bigint [pk]
+  erp_user_id bigint
+  name varchar
+  role_code varchar
+  is_active boolean
+  last_sync_at datetime
+}
+
+Table sync_jobs {
+  id bigint [pk]
+  job_type varchar // PUSH | PULL
+  entity_name varchar
+  started_at datetime
+  finished_at datetime
+  status varchar // SUCCESS | FAILED | PARTIAL
+}
+
+Table sync_queue {
+  id bigint [pk]
+  entity_name varchar
+  entity_id bigint
+  operation varchar // CREATE | UPDATE
+  sync_status varchar // PENDING | SUCCESS | FAILED
+  retry_count int
+  last_attempt_at datetime
+}
+
+Table sync_logs {
+  id bigint [pk]
+  entity_name varchar
+  entity_id bigint
+  direction varchar // LOCAL_TO_ERP | ERP_TO_LOCAL
+  status varchar // SUCCESS | FAILED
+  error_message varchar
+  synced_at datetime
+}
+
+Table id_mappings {
+  id bigint [pk]
+  entity_name varchar
+  local_id bigint
+  erp_id bigint
+  created_at datetime
+}
+
+// ======================
+// RELATIONSHIPS
+// ======================
+
+Ref: users.id < user_roles.user_id
+Ref: roles.id < user_roles.role_id
+
+Ref: users.id < transactions.created_by
+Ref: users.id < payments.verified_by
+Ref: users.id < loader_assignments.operator_id
+Ref: users.id < transaction_status_logs.changed_by
+
+Ref: customers.id < vehicles.customer_id
+Ref: customers.id < transactions.customer_id
+Ref: vehicles.id < transactions.vehicle_id
+
+Ref: items.id < price_lists.item_id
+Ref: items.id < transaction_items.item_id
+Ref: transactions.id < transaction_items.transaction_id
+
+Ref: transaction_types.id < transactions.transaction_type_id
+Ref: payment_methods.id < payments.payment_method_id
+Ref: transactions.id < payments.transaction_id
+
+Ref: loaders.id < loader_assignments.loader_id
+Ref: transactions.id < loader_assignments.transaction_id
+
+Ref: transactions.id < transaction_status_logs.transaction_id
+Ref: transactions.id < gate_logs.transaction_id
+Ref: transactions.id < fraud_flags.transaction_id
+
+Ref: devices.device_id < sync_jobs.id
+Ref: sync_jobs.id < sync_queue.id
+Ref: sync_queue.id < sync_logs.id
+
+Ref: transactions.id < sync_queue.entity_id
+Ref: transactions.id < sync_logs.entity_id
+
+Ref: id_mappings.local_id - transactions.id
+Ref: id_mappings.local_id - local_users.id

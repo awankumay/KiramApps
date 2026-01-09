@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 /* eslint-env node */
+/* eslint-disable @typescript-eslint/no-var-requires */
 
-import { Umzug } from "umzug";
-import path from "path";
-import fs from "fs";
-import os from "os";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
+const { Umzug } = require("umzug");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const BetterSqlite3 = require("better-sqlite3");
 
 /**
@@ -141,6 +139,7 @@ async function main() {
     }
   } catch (error) {
     console.error("❌ Migration failed:", error.message);
+    console.error("Stack:", error.stack);
     process.exit(1);
   } finally {
     db.close();

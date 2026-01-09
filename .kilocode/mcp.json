@@ -2,31 +2,26 @@
   "mcpServers": {
     "shadcn": {
       "command": "npx",
-      "args": [
-        "shadcn@latest",
-        "mcp"
-      ],
-      "alwaysAllow": [
-        "list_items_in_registries",
-        "get_add_command_for_items"
-      ]
+      "args": ["shadcn@latest", "mcp"],
+      "alwaysAllow": ["list_items_in_registries", "get_add_command_for_items"]
     },
     "context7": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ],
+      "args": ["-y", "@upstash/context7-mcp"],
       "env": {
         "DEFAULT_MINIMUM_TOKENS": ""
       }
     },
-    "sqlite": {
-      "command": "uvx",
+    "devdb-mcp-server": {
+      "command": "node",
       "args": [
-        "mcp-server-sqlite",
-        "--db-path",
-        "/c/Users/LENOVO/AppData/Roaming/kiram-site/app-data.db"
+        "c:\\Users\\LENOVO\\.vscode\\extensions\\damms005.devdb-2.14.3-win32-x64\\dist\\services\\mcp\\no-vscode\\server.js"
+      ],
+      "alwaysAllow": [
+        "get-tables",
+        "get-schema",
+        "get-database-type",
+        "run-query"
       ]
     }
   }

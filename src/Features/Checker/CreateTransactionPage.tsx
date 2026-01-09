@@ -85,7 +85,7 @@ export function CreateTransactionPage() {
     try {
       const result = await window.api.paymentMethods.getAll();
       if (result.success && result.data) {
-        setPaymentMethods(result.data);
+        setPaymentMethods(result.data.paymentMethods);
       }
     } catch (error) {
       console.error("Error fetching payment methods:", error);

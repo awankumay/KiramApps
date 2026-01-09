@@ -39,7 +39,6 @@ exports.generateMigrationFile = generateMigrationFile;
 const umzug_1 = require("umzug");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
-const url_1 = require("url");
 const electron_1 = require("electron");
 /**
  * Resolve migrations directory path for both dev and production
@@ -127,9 +126,9 @@ function createMigrator(db, migrationsPath) {
                     up: async () => {
                         try {
                             console.log(`[Migration] Running ${name}`);
-                            // Use dynamic import with file URL for ES modules
-                            const fileUrl = (0, url_1.pathToFileURL)(migrationPath).href;
-                            const migration = await Promise.resolve(`${fileUrl}`).then(s => __importStar(require(s)));
+                            // Use require for CommonJS modules (production compatibility)
+                            // eslint-disable-next-line @typescript-eslint/no-var-requires
+                            const migration = require(migrationPath);
                             return await migration.up(context);
                         }
                         catch (error) {
@@ -139,8 +138,8 @@ function createMigrator(db, migrationsPath) {
                     },
                     down: async () => {
                         try {
-                            const fileUrl = (0, url_1.pathToFileURL)(migrationPath).href;
-                            const migration = await Promise.resolve(`${fileUrl}`).then(s => __importStar(require(s)));
+                            // eslint-disable-next-line @typescript-eslint/no-var-requires
+                            const migration = require(migrationPath);
                             return await migration.down(context);
                         }
                         catch (error) {
@@ -174,9 +173,9 @@ class MigrationRunner {
                         name,
                         up: async () => {
                             try {
-                                // Use dynamic import with file URL for ES modules
-                                const fileUrl = (0, url_1.pathToFileURL)(migrationPath).href;
-                                const migration = await Promise.resolve(`${fileUrl}`).then(s => __importStar(require(s)));
+                                // Use require for CommonJS modules (production compatibility)
+                                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                                const migration = require(migrationPath);
                                 return await migration.up(context);
                             }
                             catch (error) {
@@ -186,8 +185,8 @@ class MigrationRunner {
                         },
                         down: async () => {
                             try {
-                                const fileUrl = (0, url_1.pathToFileURL)(migrationPath).href;
-                                const migration = await Promise.resolve(`${fileUrl}`).then(s => __importStar(require(s)));
+                                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                                const migration = require(migrationPath);
                                 return await migration.down(context);
                             }
                             catch (error) {

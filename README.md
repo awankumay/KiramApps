@@ -89,6 +89,7 @@ npm run db:fresh
 ### Documentation
 
 - **[Database Migration Guide](./docs/DATABASE_MIGRATION_GUIDE.md)** - Complete migration system documentation
+- **[Module System Guide](./docs/MODULE_SYSTEM_GUIDE.md)** - CommonJS vs ES Modules for development and production
 - **[Quick Reference](./docs/MIGRATION_QUICK_REFERENCE.md)** - Command cheat sheet
 - **[ERD Diagram](./docs/erd/erd.md)** - Database schema visualization
 

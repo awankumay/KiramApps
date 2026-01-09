@@ -104,6 +104,29 @@ export const ROUTES: Record<string, RouteConfig> = {
     showInNav: false,
   },
 
+  // Reference Data routes (Superadmin only)
+  transactionTypes: {
+    path: "/superadmin/transaction-types",
+    name: "Manajemen Tipe Transaksi",
+    permissions: [Permission.MANAGE_TRANSACTION_TYPES],
+    icon: "Layers",
+    showInNav: true,
+  },
+  paymentMethods: {
+    path: "/superadmin/payment-methods",
+    name: "Manajemen Metode Pembayaran",
+    permissions: [Permission.MANAGE_PAYMENT_METHODS],
+    icon: "CreditCard",
+    showInNav: true,
+  },
+  loaders: {
+    path: "/superadmin/loaders",
+    name: "Manajemen Loader",
+    permissions: [Permission.MANAGE_LOADERS],
+    icon: "Truck",
+    showInNav: true,
+  },
+
   // Transaction routes (Checker + Superadmin)
   transactions: {
     path: "/checker/transactions",
@@ -175,7 +198,17 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Superadmin",
-    items: ["users", "roles", "items", "customers", "vehicles", "reports"],
+    items: [
+      "users",
+      "roles",
+      "items",
+      "customers",
+      "vehicles",
+      "transactionTypes",
+      "paymentMethods",
+      "loaders",
+      "reports",
+    ],
   },
   {
     label: "Transaksi",

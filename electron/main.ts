@@ -648,7 +648,10 @@ function setupAuthHandlers() {
   // Create new customer
   ipcMain.handle(
     "customers:create",
-    async (_event, customerData: { name: string; category: string }) => {
+    async (
+      _event,
+      customerData: { name: string; category: string; code: string }
+    ) => {
       try {
         const customerManager = authManager.getCustomerManager();
         const customer = customerManager.create(customerData);
@@ -671,7 +674,12 @@ function setupAuthHandlers() {
     async (
       _event,
       customerId: number,
-      customerData: { name?: string; category?: string; is_active?: boolean }
+      customerData: {
+        name?: string;
+        category?: string;
+        code?: string;
+        is_active?: boolean;
+      }
     ) => {
       try {
         const customerManager = authManager.getCustomerManager();
@@ -1236,6 +1244,10 @@ function setupAuthHandlers() {
     }
   );
 
+  // ============================================
+  // Transaction Types CRUD Handlers
+  // ============================================
+
   // Get all transaction types
   ipcMain.handle("transactionTypes:getAll", async () => {
     try {
@@ -1253,11 +1265,240 @@ function setupAuthHandlers() {
     }
   });
 
-  // Get all payment methods
-  ipcMain.handle("paymentMethods:getAll", async () => {
+  // Get transaction type by ID
+  ipcMain.handle("transactionTypes:getById", async (_event, id: number) => {
     try {
       const transactionManager = authManager.getTransactionManager();
-      const methods = transactionManager.getPaymentMethods();
+      const type = transactionManager.getTransactionTypeById(id);
+      if (!type) {
+        return { success: false, error: "Transaction type not found" };
+      }
+      return { success: true, data: type };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get transaction type",
+      };
+    }
+  });
+
+  // Create new transaction type
+  ipcMain.handle(
+    "transactionTypes:create",
+    async (
+      _event,
+      data: { name: string; code: string; is_active?: boolean }
+    ) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const type = transactionManager.createTransactionType(data);
+        return { success: true, data: type };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to create transaction type",
+        };
+      }
+    }
+  );
+
+  // Update existing transaction type
+  ipcMain.handle(
+    "transactionTypes:update",
+    async (
+      _event,
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => {
+      try {
+        const transactionManager = authManager.getTransactionManager();
+        const type = transactionManager.updateTransactionType(id, data);
+        if (!type) {
+          return { success: false, error: "Transaction type not found" };
+        }
+        return { success: true, data: type };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to update transaction type",
+        };
+      }
+    }
+  );
+
+  // Delete transaction type (soft delete)
+  ipcMain.handle("transactionTypes:delete", async (_event, id: number) => {
+    try {
+      const transactionManager = authManager.getTransactionManager();
+      const success = transactionManager.deleteTransactionType(id);
+      if (!success) {
+        return { success: false, error: "Failed to delete transaction type" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete transaction type",
+      };
+    }
+  });
+
+  // Get active transaction types only
+  ipcMain.handle("transactionTypes:getActive", async () => {
+    try {
+      const transactionManager = authManager.getTransactionManager();
+      const types = transactionManager.getActiveTransactionTypes();
+      return { success: true, data: types };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get active transaction types",
+      };
+    }
+  });
+
+  // ============================================
+  // Payment Methods CRUD Handlers
+  // ============================================
+
+  // Get all payment methods with filters
+  ipcMain.handle(
+    "paymentMethods:getAll",
+    async (
+      _event,
+      filters: {
+        name?: string;
+        is_active?: boolean;
+        page?: number;
+        limit?: number;
+      } = {}
+    ) => {
+      try {
+        const paymentManager = authManager.getPaymentManager();
+        const result = paymentManager.getAll(filters);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to get payment methods",
+        };
+      }
+    }
+  );
+
+  // Get payment method by ID
+  ipcMain.handle("paymentMethods:getById", async (_event, id: number) => {
+    try {
+      const paymentManager = authManager.getPaymentManager();
+      const method = paymentManager.getById(id);
+      if (!method) {
+        return { success: false, error: "Payment method not found" };
+      }
+      return { success: true, data: method };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get payment method",
+      };
+    }
+  });
+
+  // Create new payment method
+  ipcMain.handle(
+    "paymentMethods:create",
+    async (
+      _event,
+      data: { name: string; code: string; is_active?: boolean }
+    ) => {
+      try {
+        const paymentManager = authManager.getPaymentManager();
+        const method = paymentManager.create(data);
+        return { success: true, data: method };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to create payment method",
+        };
+      }
+    }
+  );
+
+  // Update existing payment method
+  ipcMain.handle(
+    "paymentMethods:update",
+    async (
+      _event,
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => {
+      try {
+        const paymentManager = authManager.getPaymentManager();
+        const method = paymentManager.update(id, data);
+        if (!method) {
+          return { success: false, error: "Payment method not found" };
+        }
+        return { success: true, data: method };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to update payment method",
+        };
+      }
+    }
+  );
+
+  // Delete payment method (soft delete)
+  ipcMain.handle("paymentMethods:delete", async (_event, id: number) => {
+    try {
+      const paymentManager = authManager.getPaymentManager();
+      const success = paymentManager.delete(id);
+      if (!success) {
+        return { success: false, error: "Failed to delete payment method" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete payment method",
+      };
+    }
+  });
+
+  // Get active payment methods only
+  ipcMain.handle("paymentMethods:getActive", async () => {
+    try {
+      const paymentManager = authManager.getPaymentManager();
+      const methods = paymentManager.getActive();
       return { success: true, data: methods };
     } catch (error) {
       return {
@@ -1265,7 +1506,135 @@ function setupAuthHandlers() {
         error:
           error instanceof Error
             ? error.message
-            : "Failed to get payment methods",
+            : "Failed to get active payment methods",
+      };
+    }
+  });
+
+  // ============================================
+  // Loaders CRUD Handlers
+  // ============================================
+
+  // Get all loaders with filters
+  ipcMain.handle(
+    "loaders:getAll",
+    async (
+      _event,
+      filters: {
+        name?: string;
+        is_active?: boolean;
+        page?: number;
+        limit?: number;
+      } = {}
+    ) => {
+      try {
+        const loaderManager = authManager.getLoaderManager();
+        const result = loaderManager.getAll(filters);
+        return { success: true, data: result };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to get loaders",
+        };
+      }
+    }
+  );
+
+  // Get loader by ID
+  ipcMain.handle("loaders:getById", async (_event, id: number) => {
+    try {
+      const loaderManager = authManager.getLoaderManager();
+      const loader = loaderManager.getById(id);
+      if (!loader) {
+        return { success: false, error: "Loader not found" };
+      }
+      return { success: true, data: loader };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get loader",
+      };
+    }
+  });
+
+  // Create new loader
+  ipcMain.handle(
+    "loaders:create",
+    async (
+      _event,
+      data: { name: string; code: string; is_active?: boolean }
+    ) => {
+      try {
+        const loaderManager = authManager.getLoaderManager();
+        const loader = loaderManager.create(data);
+        return { success: true, data: loader };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to create loader",
+        };
+      }
+    }
+  );
+
+  // Update existing loader
+  ipcMain.handle(
+    "loaders:update",
+    async (
+      _event,
+      id: number,
+      data: { name?: string; code?: string; is_active?: boolean }
+    ) => {
+      try {
+        const loaderManager = authManager.getLoaderManager();
+        const loader = loaderManager.update(id, data);
+        if (!loader) {
+          return { success: false, error: "Loader not found" };
+        }
+        return { success: true, data: loader };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to update loader",
+        };
+      }
+    }
+  );
+
+  // Delete loader (soft delete)
+  ipcMain.handle("loaders:delete", async (_event, id: number) => {
+    try {
+      const loaderManager = authManager.getLoaderManager();
+      const success = loaderManager.delete(id);
+      if (!success) {
+        return { success: false, error: "Failed to delete loader" };
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to delete loader",
+      };
+    }
+  });
+
+  // Get active loaders only
+  ipcMain.handle("loaders:getActive", async () => {
+    try {
+      const loaderManager = authManager.getLoaderManager();
+      const loaders = loaderManager.getActive();
+      return { success: true, data: loaders };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get active loaders",
       };
     }
   });

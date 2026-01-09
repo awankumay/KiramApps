@@ -2,7 +2,7 @@ import { Umzug } from "umzug";
 import type { Database } from "better-sqlite3";
 import * as path from "path";
 import * as fs from "fs";
-import { pathToFileURL } from "url";
+// import { pathToFileURL } from "url";
 import { app } from "electron";
 
 /**
@@ -135,9 +135,9 @@ export function createMigrator(
           up: async () => {
             try {
               console.log(`[Migration] Running ${name}`);
-              // Use dynamic import with file URL for ES modules
-              const fileUrl = pathToFileURL(migrationPath!).href;
-              const migration = await import(fileUrl);
+              // Use require for CommonJS modules (production compatibility)
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const migration = require(migrationPath!);
               return await migration.up(context);
             } catch (error) {
               console.error(
@@ -149,8 +149,8 @@ export function createMigrator(
           },
           down: async () => {
             try {
-              const fileUrl = pathToFileURL(migrationPath!).href;
-              const migration = await import(fileUrl);
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const migration = require(migrationPath!);
               return await migration.down(context);
             } catch (error) {
               console.error(
@@ -194,9 +194,9 @@ export class MigrationRunner {
             name,
             up: async () => {
               try {
-                // Use dynamic import with file URL for ES modules
-                const fileUrl = pathToFileURL(migrationPath!).href;
-                const migration = await import(fileUrl);
+                // Use require for CommonJS modules (production compatibility)
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const migration = require(migrationPath!);
                 return await migration.up(context);
               } catch (error) {
                 console.error(`Failed to run migration ${name}:`, error);
@@ -205,8 +205,8 @@ export class MigrationRunner {
             },
             down: async () => {
               try {
-                const fileUrl = pathToFileURL(migrationPath!).href;
-                const migration = await import(fileUrl);
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const migration = require(migrationPath!);
                 return await migration.down(context);
               } catch (error) {
                 console.error(`Failed to rollback migration ${name}:`, error);

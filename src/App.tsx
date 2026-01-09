@@ -21,6 +21,9 @@ import { CustomerListPage } from "@Features/Customer/CustomerListPage";
 import { CustomerForm } from "@Features/Customer/CustomerForm";
 import { VehicleListPage } from "@Features/Vehicle/VehicleListPage";
 import { VehicleForm } from "@Features/Vehicle/VehicleForm";
+import { TransactionTypesListPage } from "@Features/Transaction/TransactionTypesListPage";
+import { PaymentMethodsListPage } from "@Features/Payment/PaymentMethodsListPage";
+import { LoadersListPage } from "@Features/Loader/LoadersListPage";
 
 /**
  * Helper function to check if a path is accessible for given roles
@@ -200,6 +203,32 @@ function AppContent() {
           element={
             <ProtectedRoute permissions={[Permission.VIEW_REPORTS]}>
               <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Reference Data Management Routes */}
+        <Route
+          path="/superadmin/transaction-types"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_TRANSACTION_TYPES]}>
+              <TransactionTypesListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/payment-methods"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_PAYMENT_METHODS]}>
+              <PaymentMethodsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/superadmin/loaders"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_LOADERS]}>
+              <LoadersListPage />
             </ProtectedRoute>
           }
         />
