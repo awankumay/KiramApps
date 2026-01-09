@@ -4,6 +4,7 @@ import { Button } from "@Shared/Components/UI/Button";
 import { Input } from "@Shared/Components/UI/Input";
 import { Label } from "@Shared/Components/UI/Label";
 import { Textarea } from "@Shared/Components/UI/Textarea";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -59,11 +60,32 @@ export function CreateTransactionPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodData[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Reset form to initial state
+  const resetForm = () => {
+    setCustomerId(null);
+    setVehicleId(null);
+    setTransactionTypeId(1);
+    setPaymentMethodId(1);
+    setNotes("");
+    setItems([
+      {
+        id: Date.now(),
+        itemId: "",
+        itemName: "",
+        quantity: 1,
+        price: 0,
+        subtotal: 0,
+      },
+    ]);
+  };
+
   const fetchTransactionTypes = useCallback(async () => {
     try {
       const result = await window.api.transactionTypes.getAll();
       if (result.success && result.data) {
-        setTransactionTypes(result.data);
+        // Filter only active transaction types (is_active = 1)
+        const activeTypes = result.data.filter((type) => type.is_active);
+        setTransactionTypes(activeTypes);
       }
     } catch (error) {
       console.error("Error fetching transaction types:", error);
@@ -85,7 +107,11 @@ export function CreateTransactionPage() {
     try {
       const result = await window.api.paymentMethods.getAll();
       if (result.success && result.data) {
-        setPaymentMethods(result.data.paymentMethods);
+        // Filter only active payment methods (is_active = 1)
+        const activeMethods = result.data.paymentMethods.filter(
+          (method) => method.is_active
+        );
+        setPaymentMethods(activeMethods);
       }
     } catch (error) {
       console.error("Error fetching payment methods:", error);
@@ -156,22 +182,30 @@ export function CreateTransactionPage() {
   const handleSubmit = async () => {
     // Validation
     if (!customerId) {
-      alert("Silakan pilih customer");
+      toast.error("Validasi Gagal", {
+        description: "Silakan pilih customer",
+      });
       return;
     }
 
     if (!vehicleId) {
-      alert("Silakan pilih kendaraan");
+      toast.error("Validasi Gagal", {
+        description: "Silakan pilih kendaraan",
+      });
       return;
     }
 
     if (items.some((item) => !item.itemId)) {
-      alert("Silakan pilih item untuk semua baris");
+      toast.error("Validasi Gagal", {
+        description: "Silakan pilih item untuk semua baris",
+      });
       return;
     }
 
     if (items.some((item) => item.quantity <= 0)) {
-      alert("Qty harus lebih dari 0");
+      toast.error("Validasi Gagal", {
+        description: "Qty harus lebih dari 0",
+      });
       return;
     }
 
@@ -197,14 +231,20 @@ export function CreateTransactionPage() {
       );
 
       if (result.success && result.data) {
-        alert("Transaksi berhasil dibuat!");
-        window.location.hash = "/checker/transactions";
+        toast.success("Transaksi Berhasil", {
+          description: `Transaksi dengan invoice ${result.data.invoiceNumber} telah dibuat`,
+        });
+        resetForm();
       } else {
-        alert("Gagal membuat transaksi: " + (result.error || "Unknown error"));
+        toast.error("Gagal membuat transaksi", {
+          description: result.error || "Unknown error",
+        });
       }
     } catch (error) {
       console.error("Error creating transaction:", error);
-      alert("Terjadi kesalahan saat membuat transaksi");
+      toast.error("Terjadi kesalahan", {
+        description: "Terjadi kesalahan saat membuat transaksi",
+      });
     } finally {
       setSubmitting(false);
     }
