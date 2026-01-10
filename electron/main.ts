@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu } from "electron";
 // import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -6,6 +6,7 @@ import * as fs from "fs";
 import { createDatabase } from "./auth/database";
 import { AuthManager } from "./auth/AuthManager";
 import { runMigrations } from "./database/index";
+import packageJson from "../package.json" assert { type: "json" };
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +41,30 @@ function createWindow() {
       preload: path.join(__dirname, "preload.mjs"),
     },
   });
+
+  // Custom Menu Bar
+  if (app.isPackaged) {
+    // Production mode: Custom menu Help saja
+    const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: "Help",
+        submenu: [
+          {
+            label: "Tentang",
+            click: () => {
+              dialog.showMessageBox(win!, {
+                message: `KiramApps v${packageJson.version}`,
+                title: "Tentang Aplikasi",
+                type: "info",
+              });
+            },
+          },
+        ],
+      },
+    ];
+    Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+  }
+  // Development mode: Tidak mengatur menu (gunakan menu default Electron dengan debug dan hotkeys)
 
   // Test active push message to Renderer-process.
   win.webContents.on("did-finish-load", () => {

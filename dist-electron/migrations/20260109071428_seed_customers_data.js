@@ -17,6 +17,6 @@ module.exports.up = async function ({ db }) {
  */
 module.exports.down = async function ({ db }) {
     // Add your rollback logic here
-    // Example:
-    // db.exec(`DROP TABLE IF EXISTS example`);
+    // Delete Data Customers
+    db.exec(`DELETE FROM customers WHERE code = 'CASH'`);
 };

@@ -23,9 +23,11 @@
     artifactName: "${productName}-Windows-${version}-Setup.${ext}",
   },
   nsis: {
-    oneClick: false,
+    oneClick: true,
     perMachine: false,
-    allowToChangeInstallationDirectory: true,
+    uninstallDisplayName: "KiramApps Uninstall",
+    license: "license.md",
+    allowToChangeInstallationDirectory: false,
     deleteAppDataOnUninstall: false,
   },
   linux: {

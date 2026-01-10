@@ -1,6 +1,6 @@
 import { TokenStorage } from "./TokenStorage";
 import { AuditLogger } from "./AuditLogger";
-import { DummyJSONClient } from "./DummyJSONClient";
+import { ERPClient } from "./ERPClient";
 import { NetworkStatus } from "./NetworkStatus";
 import { RBACManager } from "./RBACManager";
 import { ItemsManager } from "./ItemsManager";
@@ -38,12 +38,12 @@ export interface AuthResult {
 
 /**
  * AuthManager orchestrates authentication flow
- * Coordinates between TokenStorage, DummyJSONClient, AuditLogger, and RBACManager
+ * Coordinates between TokenStorage, ERPClient, AuditLogger, and RBACManager
  */
 export class AuthManager {
   private tokenStorage: TokenStorage;
   private auditLogger: AuditLogger;
-  private apiClient: DummyJSONClient;
+  private apiClient: ERPClient;
   private networkStatus: NetworkStatus;
   private rbacManager: RBACManager;
   private itemsManager: ItemsManager;
@@ -58,7 +58,7 @@ export class AuthManager {
     this.db = db;
     this.tokenStorage = new TokenStorage(db);
     this.auditLogger = new AuditLogger(db);
-    this.apiClient = new DummyJSONClient();
+    this.apiClient = new ERPClient();
     this.networkStatus = new NetworkStatus();
     this.rbacManager = new RBACManager(db);
     this.itemsManager = new ItemsManager(db);

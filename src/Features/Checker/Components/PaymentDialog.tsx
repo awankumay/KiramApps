@@ -126,11 +126,12 @@ export function PaymentDialog({
                   <SelectValue placeholder="Pilih metode pembayaran" />
                 </SelectTrigger>
                 <SelectContent>
-                  {paymentMethods.map((method) => (
-                    <SelectItem key={method.id} value={method.id.toString()}>
-                      {method.name}
-                    </SelectItem>
-                  ))}
+                  {Array.isArray(paymentMethods) &&
+                    paymentMethods.map((method) => (
+                      <SelectItem key={method.id} value={method.id.toString()}>
+                        {method.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

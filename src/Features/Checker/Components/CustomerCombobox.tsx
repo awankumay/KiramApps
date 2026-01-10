@@ -42,6 +42,7 @@ export function CustomerCombobox({
         const result = await window.api.customers.create({
           name,
           category: "PERSONAL",
+          code: name.toUpperCase().replace(/\s+/g, "_"),
         });
 
         if (result.success && result.data) {

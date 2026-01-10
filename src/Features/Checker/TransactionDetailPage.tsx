@@ -111,7 +111,8 @@ export function TransactionDetailPage() {
       }
 
       if (methodsResult.success && methodsResult.data) {
-        setPaymentMethods(methodsResult.data);
+        // PaymentManager.getAll() returns { paymentMethods: [...], total, page, limit }
+        setPaymentMethods(methodsResult.data.paymentMethods || []);
       }
     } catch (error) {
       console.error("Error fetching transaction:", error);
@@ -515,10 +516,10 @@ export function TransactionDetailPage() {
                   payments.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex justify-between items-start text-sm p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                      className="grid grid-cols-[1fr_auto] gap-3 text-sm p-3 rounded-lg border hover:bg-muted/50 transition-colors items-start"
                     >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium">
                             {payment.paymentMethodName}
                           </p>
@@ -544,31 +545,33 @@ export function TransactionDetailPage() {
                             </Badge>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(payment.createdAt).toLocaleString("id-ID")}
-                        </p>
-                        {payment.reference && (
+                        <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">
-                            Ref: {payment.reference}
+                            {new Date(payment.createdAt).toLocaleString(
+                              "id-ID"
+                            )}
                           </p>
-                        )}
+                          {payment.reference && (
+                            <p className="text-xs text-muted-foreground">
+                              Ref: {payment.reference}
+                            </p>
+                          )}
+                          <Badge variant="outline" className="text-xs">
+                            Rp {payment.amount.toLocaleString("id-ID")}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">
-                          Rp {payment.amount.toLocaleString("id-ID")}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => {
-                            setSelectedPayment(payment);
-                            setPaymentDetailOpen(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => {
+                          setSelectedPayment(payment);
+                          setPaymentDetailOpen(true);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </div>
                   ))
                 )}
