@@ -24,6 +24,8 @@ import { VehicleForm } from "@Features/Vehicle/VehicleForm";
 import { TransactionTypesListPage } from "@Features/Transaction/TransactionTypesListPage";
 import { PaymentMethodsListPage } from "@Features/Payment/PaymentMethodsListPage";
 import { LoadersListPage } from "@Features/Loader/LoadersListPage";
+import { SettingsPage } from "@Features/Settings/Components/SettingsPage";
+import { SyncDashboardPage } from "@Features/Sync/Components/SyncDashboardPage";
 
 /**
  * Helper function to check if a path is accessible for given roles
@@ -229,6 +231,26 @@ function AppContent() {
           element={
             <ProtectedRoute permissions={[Permission.MANAGE_LOADERS]}>
               <LoadersListPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Settings Route */}
+        <Route
+          path="/superadmin/settings"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_SETTINGS]}>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Sync Route */}
+        <Route
+          path="/superadmin/sync"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_SYNC]}>
+              <SyncDashboardPage />
             </ProtectedRoute>
           }
         />

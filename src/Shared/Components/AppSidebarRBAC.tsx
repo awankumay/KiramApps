@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  RefreshCw,
+  Layers,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@Features/Auth/Contexts/AuthContext";
@@ -52,6 +54,7 @@ import {
 } from "@Shared/Components/UI/DropdownMenu";
 import { Badge } from "@Shared/Components/UI/Badge";
 import { Avatar, AvatarFallback } from "@Shared/Components/UI/Avatar";
+import { SyncStatusIndicator } from "@Shared/Components/SyncStatusIndicator";
 import { cn } from "../Lib/Utils";
 
 // Icon mapping - matches icon names in RouteConfig
@@ -70,6 +73,8 @@ const iconMap: Record<string, typeof LayoutDashboard> = {
   Settings,
   HelpCircle,
   Search,
+  RefreshCw,
+  Layers,
 };
 
 export function AppSidebarRBAC({
@@ -266,6 +271,8 @@ export function AppSidebarRBAC({
 }
 
 export function AppSidebarLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+
   return (
     <SidebarProvider
       style={
@@ -280,6 +287,8 @@ export function AppSidebarLayout({ children }: { children: React.ReactNode }) {
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <div className="flex-1" />
+          {/* Sync Status Indicator - only shown when authenticated */}
+          {user && <SyncStatusIndicator showLabel={true} />}
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4">{children}</div>
       </SidebarInset>

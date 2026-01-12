@@ -612,8 +612,131 @@ declare global {
           fileName: string
         ) => Promise<ApiResponse<{ filePath?: string }>>;
       };
+      settings: {
+        getAll: () => Promise<ApiResponse<AppSettingData[]>>;
+        get: (key: string) => Promise<ApiResponse<AppSettingData | null>>;
+        getValue: (
+          key: string,
+          defaultValue?: unknown
+        ) => Promise<ApiResponse<unknown>>;
+        set: (
+          key: string,
+          value: string | number | boolean | object,
+          options?: { type?: string; category?: string; description?: string }
+        ) => Promise<ApiResponse<boolean>>;
+        setMultiple: (
+          settings: Array<{
+            key: string;
+            value: string | number | boolean | object;
+            type?: string;
+            category?: string;
+            description?: string;
+          }>
+        ) => Promise<ApiResponse<boolean>>;
+        getByCategory: (
+          category: string
+        ) => Promise<ApiResponse<AppSettingData[]>>;
+        testConnection: (
+          url?: string
+        ) => Promise<ApiResponse<ConnectionTestResult>>;
+      };
+      sync: {
+        getStats: () => Promise<ApiResponse<SyncStatsData>>;
+        getLogs: (
+          filters?: SyncLogsFilters
+        ) => Promise<ApiResponse<{ logs: SyncLogData[]; total: number }>>;
+        syncAll: () => Promise<ApiResponse<{ message: string }>>;
+        syncEntity: (
+          entityType: string,
+          direction?: string
+        ) => Promise<ApiResponse<{ message: string }>>;
+        retry: (syncId: string) => Promise<ApiResponse<boolean>>;
+        retryFailed: () => Promise<ApiResponse<{ message: string }>>;
+        startScheduler: () => Promise<ApiResponse<boolean>>;
+        stopScheduler: () => Promise<ApiResponse<boolean>>;
+        isOnline: () => Promise<ApiResponse<boolean>>;
+        getNetworkStatus: () => Promise<ApiResponse<{ isOnline: boolean }>>;
+        pushInitialData: (
+          entityType: string
+        ) => Promise<ApiResponse<{ message: string; count: number }>>;
+        pushAllInitialData: () => Promise<
+          ApiResponse<{
+            message: string;
+            results: Array<{
+              entityType: string;
+              success: boolean;
+              message: string;
+              count: number;
+            }>;
+            totalSuccess: number;
+            totalFailed: number;
+          }>
+        >;
+      };
     };
   }
+}
+
+// Settings Types
+export interface AppSettingData {
+  id: number;
+  key: string;
+  value: string | null;
+  type: "string" | "number" | "boolean" | "json";
+  category: "general" | "sync" | "display" | "security";
+  description: string | null;
+  is_encrypted: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  latencyMs: number;
+  message: string;
+  serverVersion?: string;
+}
+
+// Sync Types
+export interface SyncStatsData {
+  total: number;
+  totalSynced: number;
+  pending: number;
+  pendingCount: number;
+  processing: number;
+  completed: number;
+  successCount: number;
+  failed: number;
+  failedCount: number;
+  lastSyncAt: string | null;
+  byEntity: Record<string, number>;
+  byDirection: Record<string, number>;
+}
+
+export interface SyncLogData {
+  id: number;
+  sync_id: string;
+  entity_type: string;
+  entity_id: number | null;
+  action: string;
+  direction: string;
+  status: string;
+  payload: string | null;
+  error_message: string | null;
+  retry_count: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface SyncLogsFilters {
+  entity_type?: string;
+  entityType?: string;
+  status?: string;
+  direction?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export {};

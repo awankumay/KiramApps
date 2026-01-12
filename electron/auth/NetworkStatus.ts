@@ -7,7 +7,7 @@ import { EventEmitter } from "events";
 export class NetworkStatus extends EventEmitter {
   private _isOnline: boolean = true;
   private checkInterval: NodeJS.Timeout | null = null;
-  private readonly pingUrl = "https://dummyjson.com";
+  private readonly pingUrl = "http://localhost:8000/api/v1/healthz";
 
   constructor() {
     super();

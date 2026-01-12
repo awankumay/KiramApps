@@ -7,6 +7,10 @@ import { createDatabase } from "./auth/database";
 import { AuthManager } from "./auth/AuthManager";
 import { runMigrations } from "./database/index";
 import packageJson from "../package.json" assert { type: "json" };
+import { SettingsManager } from "./auth/SettingsManager";
+import { SyncManager } from "./auth/SyncManager";
+import { ERPClient } from "./auth/ERPClient";
+import { NetworkStatus } from "./auth/NetworkStatus";
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +37,9 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 let win: BrowserWindow | null;
 let authManager: AuthManager;
+let settingsManager: SettingsManager | null = null;
+let syncManager: SyncManager | null = null;
+let networkStatus: NetworkStatus | null = null;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -121,6 +128,16 @@ async function initializeAuth() {
 
     authManager = new AuthManager(db);
     console.log("Authentication system initialized");
+
+    // Initialize settings manager
+    settingsManager = new SettingsManager(db);
+    ERPClient.initializeSettings(db);
+    console.log("Settings manager initialized");
+
+    // Initialize network status and sync manager
+    networkStatus = authManager.getNetworkStatus();
+    syncManager = new SyncManager(db, networkStatus);
+    console.log("Sync manager initialized");
   } catch (error) {
     console.error("Failed to initialize authentication system:", error);
     // Show error dialog to user - only in production
@@ -135,6 +152,55 @@ async function initializeAuth() {
     }
     // In development, just log and continue
     console.log("Continuing without database in development mode...");
+  }
+}
+
+/**
+ * Helper function to queue a sync operation
+ * Safely handles cases where syncManager is not initialized
+ */
+async function queueSyncOperation(
+  entityType:
+    | "customer"
+    | "transaction"
+    | "transaction_item"
+    | "transaction_vehicle"
+    | "transaction_payment"
+    | "payment_verification"
+    | "loader",
+  action: "create" | "update" | "delete",
+  data: unknown,
+  entityId?: number
+): Promise<void> {
+  if (!syncManager) {
+    console.log("[Sync] Sync manager not initialized, skipping sync queue");
+    return;
+  }
+
+  try {
+    // Initialize sync with current access token if needed
+    const accessToken = await authManager.getAccessToken();
+    if (accessToken) {
+      syncManager.initialize(accessToken);
+    }
+
+    const syncId = await syncManager.queueSync(
+      entityType,
+      action,
+      data,
+      entityId
+    );
+    console.log(
+      `[Sync] Queued ${action.toUpperCase()} for ${entityType}${
+        entityId ? ` (ID: ${entityId})` : ""
+      } | SyncID: ${syncId}`
+    );
+  } catch (error) {
+    console.error(
+      `[Sync] Failed to queue ${action} for ${entityType}:`,
+      error instanceof Error ? error.message : error
+    );
+    // Don't throw - sync failures shouldn't break the main operation
   }
 }
 
@@ -680,6 +746,25 @@ function setupAuthHandlers() {
       try {
         const customerManager = authManager.getCustomerManager();
         const customer = customerManager.create(customerData);
+
+        // Queue sync for created customer
+        // Transform to snake_case format expected by ERP
+        if (customer) {
+          await queueSyncOperation(
+            "customer",
+            "create",
+            {
+              id: customer.id,
+              code: customer.code,
+              name: customer.name,
+              category: customer.category,
+              is_active:
+                customer.is_active !== undefined ? customer.is_active : true,
+            },
+            customer.id
+          );
+        }
+
         return { success: true, data: customer };
       } catch (error) {
         return {
@@ -712,6 +797,23 @@ function setupAuthHandlers() {
         if (!customer) {
           return { success: false, error: "Customer not found" };
         }
+
+        // Queue sync for updated customer
+        // Transform to snake_case format expected by ERP
+        await queueSyncOperation(
+          "customer",
+          "update",
+          {
+            id: customer.id,
+            code: customer.code,
+            name: customer.name,
+            category: customer.category,
+            is_active:
+              customer.is_active !== undefined ? customer.is_active : true,
+          },
+          customerId
+        );
+
         return { success: true, data: customer };
       } catch (error) {
         return {
@@ -733,6 +835,15 @@ function setupAuthHandlers() {
       if (!success) {
         return { success: false, error: "Failed to delete customer" };
       }
+
+      // Queue sync for deleted customer (soft delete)
+      await queueSyncOperation(
+        "customer",
+        "delete",
+        { id: customerId },
+        customerId
+      );
+
       return { success: true };
     } catch (error) {
       return {
@@ -1053,6 +1164,51 @@ function setupAuthHandlers() {
           transactionData,
           userId
         );
+
+        // Queue sync for created transaction with items
+        if (transaction) {
+          console.log(
+            `[Transaction Sync] Queuing sync for transaction ${
+              transaction.id
+            } with ${transaction.items?.length || 0} items`
+          );
+
+          // Transform to camelCase format expected by ERP (as per erp-cloud-sync-plan.md)
+          // Note: Items are included in the transaction payload, so no need for separate transaction_item sync
+          await queueSyncOperation(
+            "transaction",
+            "create",
+            {
+              id: transaction.id,
+              invoiceNumber: transaction.invoiceNumber,
+              transactionNumber: transaction.invoiceNumber, // Use invoice as transaction number
+              transactionTypeId: transaction.transactionTypeId,
+              customerId: transaction.customerId,
+              vehicleId: transaction.vehicleId,
+              totalAmount: transaction.totalAmount,
+              paymentStatus: transaction.paymentStatus,
+              transactionStatus: transaction.transactionStatus,
+              createdBy: transaction.createdBy,
+              notes: transaction.notes || null,
+              // Include items for nested sync - ERP Cloud will handle items from this payload
+              items: transaction.items?.map((item) => ({
+                id: item.id,
+                itemId: item.itemId,
+                itemName: item.itemName || "Unknown Item",
+                itemUnit: item.itemUnit || "unit",
+                itemPrice: item.price,
+                qty: item.qty,
+                subtotal: item.subtotal,
+              })),
+            },
+            transaction.id
+          );
+
+          console.log(
+            `[Transaction Sync] Successfully queued sync for transaction ${transaction.id} (${transaction.invoiceNumber})`
+          );
+        }
+
         return { success: true, data: transaction };
       } catch (error) {
         return {
@@ -1112,6 +1268,15 @@ function setupAuthHandlers() {
         if (!success) {
           return { success: false, error: "Failed to delete transaction" };
         }
+
+        // Queue sync for deleted transaction
+        await queueSyncOperation(
+          "transaction",
+          "delete",
+          { id: transactionId },
+          transactionId
+        );
+
         return { success: true };
       } catch (error) {
         return {
@@ -1168,6 +1333,15 @@ function setupAuthHandlers() {
         if (!transaction) {
           return { success: false, error: "Transaction not found" };
         }
+
+        // Queue sync for status change
+        await queueSyncOperation(
+          "transaction",
+          "update",
+          { id: transactionId, status: newStatus },
+          transactionId
+        );
+
         return { success: true, data: transaction };
       } catch (error) {
         return {
@@ -1220,6 +1394,15 @@ function setupAuthHandlers() {
         if (!payment) {
           return { success: false, error: "Transaction not found" };
         }
+
+        // Queue sync for created payment
+        await queueSyncOperation(
+          "transaction_payment",
+          "create",
+          { ...payment, transaction_id: transactionId },
+          payment.id
+        );
+
         return { success: true, data: payment };
       } catch (error) {
         return {
@@ -1593,6 +1776,12 @@ function setupAuthHandlers() {
       try {
         const loaderManager = authManager.getLoaderManager();
         const loader = loaderManager.create(data);
+
+        // Queue sync for created loader
+        if (loader) {
+          await queueSyncOperation("loader", "create", loader, loader.id);
+        }
+
         return { success: true, data: loader };
       } catch (error) {
         return {
@@ -1618,6 +1807,10 @@ function setupAuthHandlers() {
         if (!loader) {
           return { success: false, error: "Loader not found" };
         }
+
+        // Queue sync for updated loader
+        await queueSyncOperation("loader", "update", loader, id);
+
         return { success: true, data: loader };
       } catch (error) {
         return {
@@ -1637,6 +1830,10 @@ function setupAuthHandlers() {
       if (!success) {
         return { success: false, error: "Failed to delete loader" };
       }
+
+      // Queue sync for deleted loader
+      await queueSyncOperation("loader", "delete", { id }, id);
+
       return { success: true };
     } catch (error) {
       return {
@@ -1766,6 +1963,19 @@ function setupAuthHandlers() {
           notes,
           proofData
         );
+
+        // Queue sync for verification status change
+        await queueSyncOperation(
+          "payment_verification",
+          "update",
+          {
+            id: paymentId,
+            verification_status: "VERIFIED",
+            verified_by: user.id,
+          },
+          paymentId
+        );
+
         return { success: true, data: payment };
       } catch (error) {
         return {
@@ -1810,6 +2020,20 @@ function setupAuthHandlers() {
           notes,
           proofData
         );
+
+        // Queue sync for rejection status change
+        await queueSyncOperation(
+          "payment_verification",
+          "update",
+          {
+            id: paymentId,
+            verification_status: "REJECTED",
+            verified_by: user.id,
+            rejection_reason: reason,
+          },
+          paymentId
+        );
+
         return { success: true, data: payment };
       } catch (error) {
         return {
@@ -2120,6 +2344,526 @@ function setupAuthHandlers() {
       }
     }
   );
+
+  // ============================================
+  // Settings IPC Handlers
+  // ============================================
+
+  // Get all settings
+  ipcMain.handle("settings:getAll", async () => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const settings = settingsManager.getAll();
+      return { success: true, data: settings };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get settings",
+      };
+    }
+  });
+
+  // Get single setting
+  ipcMain.handle("settings:get", async (_event, key: string) => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const setting = settingsManager.getRaw(key);
+      return { success: true, data: setting };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to get setting",
+      };
+    }
+  });
+
+  // Get typed setting value
+  ipcMain.handle(
+    "settings:getValue",
+    async (_event, key: string, defaultValue?: unknown) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const value = settingsManager.get(key, defaultValue);
+        return { success: true, data: value };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to get setting value",
+        };
+      }
+    }
+  );
+
+  // Set setting value
+  ipcMain.handle(
+    "settings:set",
+    async (
+      _event,
+      key: string,
+      value: string | number | boolean | object,
+      options?: { type?: string; category?: string; description?: string }
+    ) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const success = settingsManager.set(
+          key,
+          value,
+          options as {
+            type?: "string" | "number" | "boolean" | "json";
+            category?: "general" | "sync" | "display" | "security";
+            description?: string;
+          }
+        );
+
+        // Reset ERPClient instance when URL changes
+        if (key === "erp_api_url") {
+          ERPClient.resetInstance();
+        }
+
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to set setting",
+        };
+      }
+    }
+  );
+
+  // Set multiple settings
+  ipcMain.handle(
+    "settings:setMultiple",
+    async (
+      _event,
+      settings: Array<{
+        key: string;
+        value: string | number | boolean | object;
+        type?: string;
+        category?: string;
+        description?: string;
+      }>
+    ) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const success = settingsManager.setMultiple(
+          settings as Array<{
+            key: string;
+            value: string | number | boolean | object;
+            type?: "string" | "number" | "boolean" | "json";
+            category?: "general" | "sync" | "display" | "security";
+            description?: string;
+          }>
+        );
+        ERPClient.resetInstance();
+        return { success };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to set settings",
+        };
+      }
+    }
+  );
+
+  // Get settings by category
+  ipcMain.handle("settings:getByCategory", async (_event, category: string) => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const settings = settingsManager.getByCategory(
+        category as "general" | "sync" | "display" | "security"
+      );
+      return { success: true, data: settings };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get settings",
+      };
+    }
+  });
+
+  // Test ERP connection
+  ipcMain.handle("settings:testConnection", async (_event, url?: string) => {
+    try {
+      const testUrl = url || settingsManager?.getErpApiUrl();
+      if (!testUrl) {
+        return { success: false, error: "No URL provided" };
+      }
+      const result = await ERPClient.testConnectionTo(testUrl);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Connection test failed",
+      };
+    }
+  });
+
+  // ============================================
+  // Sync IPC Handlers
+  // ============================================
+
+  // Get sync stats
+  ipcMain.handle("sync:getStats", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const stats = await syncManager.getSyncStats();
+      return { success: true, data: stats };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get sync stats",
+      };
+    }
+  });
+
+  // Get sync logs
+  ipcMain.handle(
+    "sync:getLogs",
+    async (
+      _event,
+      filters?: {
+        entityType?: string;
+        status?: string;
+        direction?: string;
+        limit?: number;
+        offset?: number;
+      }
+    ) => {
+      try {
+        if (!syncManager) {
+          return { success: false, error: "Sync manager not initialized" };
+        }
+        const logs = await syncManager.getSyncLogs(filters);
+        return { success: true, data: logs };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "Failed to get sync logs",
+        };
+      }
+    }
+  );
+
+  // Start sync all
+  ipcMain.handle("sync:syncAll", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+
+      // Initialize sync with current access token
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+
+      const result = await syncManager.syncAll();
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Sync failed",
+      };
+    }
+  });
+
+  // Retry failed sync
+  ipcMain.handle("sync:retry", async (_event, syncId: string) => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const success = await syncManager.retrySyncLog(syncId);
+      return { success };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Retry failed",
+      };
+    }
+  });
+
+  // Start sync scheduler
+  ipcMain.handle("sync:startScheduler", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+
+      // Initialize with access token
+      const accessToken = await authManager.getAccessToken();
+      if (accessToken) {
+        syncManager.initialize(accessToken);
+      }
+
+      syncManager.startScheduler();
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to start scheduler",
+      };
+    }
+  });
+
+  // Stop sync scheduler
+  ipcMain.handle("sync:stopScheduler", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      syncManager.stopScheduler();
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to stop scheduler",
+      };
+    }
+  });
+
+  // Get network/online status for sync
+  ipcMain.handle("sync:isOnline", async () => {
+    try {
+      if (!networkStatus) {
+        return { success: false, error: "Network status not initialized" };
+      }
+      // Use getStatus() for cached value (synchronous)
+      const isOnline = networkStatus.getStatus();
+      return { success: true, data: isOnline };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get online status",
+      };
+    }
+  });
+
+  // Get network status with more details
+  ipcMain.handle("sync:getNetworkStatus", async () => {
+    try {
+      if (!networkStatus) {
+        return { success: false, error: "Network status not initialized" };
+      }
+      // Use getStatus() for cached boolean value, or await isOnline() for fresh check
+      const isOnline = networkStatus.getStatus();
+      return { success: true, data: { isOnline } };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get network status",
+      };
+    }
+  });
+
+  // Sync specific entity type
+  ipcMain.handle(
+    "sync:syncEntity",
+    async (_event, entityType: string, direction?: string) => {
+      try {
+        if (!syncManager) {
+          return { success: false, error: "Sync manager not initialized" };
+        }
+
+        // Initialize sync with current access token
+        const session = await authManager.getCurrentUser();
+        if (session) {
+          const accessToken = await authManager.getAccessToken();
+          if (accessToken) {
+            syncManager.initialize(accessToken);
+          }
+        }
+
+        let result;
+        switch (entityType) {
+          case "customer":
+            result = await syncManager.syncCustomers(
+              direction as "push" | "pull" | undefined
+            );
+            break;
+          case "item":
+            result = await syncManager.syncItems(
+              direction as "push" | "pull" | undefined
+            );
+            break;
+          case "payment_verification":
+            result = await syncManager.syncPaymentVerifications(
+              direction as "push" | "pull" | undefined
+            );
+            break;
+          default:
+            return {
+              success: false,
+              error: `Unknown entity type: ${entityType}`,
+            };
+        }
+
+        return { success: result.success, message: result.message };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Sync entity failed",
+        };
+      }
+    }
+  );
+
+  // Retry all failed syncs
+  ipcMain.handle("sync:retryFailed", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+
+      // Initialize sync with current access token
+      const accessToken = await authManager.getAccessToken();
+      if (accessToken) {
+        syncManager.initialize(accessToken);
+      }
+
+      const result = await syncManager.retryAllFailed();
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Retry failed syncs failed",
+      };
+    }
+  });
+
+  // Push initial data (synced_at IS NULL) to ERP Cloud
+  ipcMain.handle("sync:pushInitialData", async (_event, entityType: string) => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+
+      // Initialize sync with current access token
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+
+      const result = await syncManager.pushInitialData(
+        entityType as "customer" | "item" | "transaction_vehicle"
+      );
+      return {
+        success: result.success,
+        message: result.message,
+        data: { count: result.count },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Push initial data failed",
+      };
+    }
+  });
+
+  // Push all initial data (all entities with synced_at IS NULL)
+  ipcMain.handle("sync:pushAllInitialData", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+
+      // Initialize sync with current access token
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+
+      const results: Array<{
+        entityType: string;
+        success: boolean;
+        message: string;
+        count: number;
+      }> = [];
+
+      // Sync all supported entity types
+      const entityTypes: Array<"customer" | "item" | "transaction_vehicle"> = [
+        "customer",
+        "item",
+        "transaction_vehicle",
+      ];
+
+      for (const entityType of entityTypes) {
+        const result = await syncManager.pushInitialData(entityType);
+        results.push({
+          entityType,
+          success: result.success,
+          message: result.message,
+          count: result.count,
+        });
+      }
+
+      const totalSuccess = results.reduce(
+        (sum, r) => sum + (r.success ? r.count : 0),
+        0
+      );
+      const totalFailed = results.reduce(
+        (sum, r) => sum + (!r.success ? 1 : 0),
+        0
+      );
+
+      return {
+        success: totalFailed === 0,
+        message: `Initial sync completed: ${totalSuccess} records synced, ${totalFailed} failed`,
+        data: { results, totalSuccess, totalFailed },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Push all initial data failed",
+      };
+    }
+  });
 }
 
 app.whenReady().then(async () => {

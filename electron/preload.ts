@@ -317,4 +317,51 @@ contextBridge.exposeInMainWorld("api", {
     saveProofAs: (paymentId: number, fileName: string) =>
       ipcRenderer.invoke("payments:saveProofAs", paymentId, fileName),
   },
+  settings: {
+    getAll: () => ipcRenderer.invoke("settings:getAll"),
+    get: (key: string) => ipcRenderer.invoke("settings:get", key),
+    getValue: (key: string, defaultValue?: unknown) =>
+      ipcRenderer.invoke("settings:getValue", key, defaultValue),
+    set: (
+      key: string,
+      value: string | number | boolean | object,
+      options?: { type?: string; category?: string; description?: string }
+    ) => ipcRenderer.invoke("settings:set", key, value, options),
+    setMultiple: (
+      settings: Array<{
+        key: string;
+        value: string | number | boolean | object;
+        type?: string;
+        category?: string;
+        description?: string;
+      }>
+    ) => ipcRenderer.invoke("settings:setMultiple", settings),
+    getByCategory: (category: string) =>
+      ipcRenderer.invoke("settings:getByCategory", category),
+    testConnection: (url?: string) =>
+      ipcRenderer.invoke("settings:testConnection", url),
+  },
+  sync: {
+    getStats: () => ipcRenderer.invoke("sync:getStats"),
+    getLogs: (filters?: {
+      entity_type?: string;
+      entityType?: string;
+      status?: string;
+      direction?: string;
+      limit?: number;
+      offset?: number;
+    }) => ipcRenderer.invoke("sync:getLogs", filters),
+    syncAll: () => ipcRenderer.invoke("sync:syncAll"),
+    syncEntity: (entityType: string, direction?: string) =>
+      ipcRenderer.invoke("sync:syncEntity", entityType, direction),
+    retry: (syncId: string) => ipcRenderer.invoke("sync:retry", syncId),
+    retryFailed: () => ipcRenderer.invoke("sync:retryFailed"),
+    startScheduler: () => ipcRenderer.invoke("sync:startScheduler"),
+    stopScheduler: () => ipcRenderer.invoke("sync:stopScheduler"),
+    isOnline: () => ipcRenderer.invoke("sync:isOnline"),
+    getNetworkStatus: () => ipcRenderer.invoke("sync:getNetworkStatus"),
+    pushInitialData: (entityType: string) =>
+      ipcRenderer.invoke("sync:pushInitialData", entityType),
+    pushAllInitialData: () => ipcRenderer.invoke("sync:pushAllInitialData"),
+  },
 });

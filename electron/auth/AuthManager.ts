@@ -119,6 +119,22 @@ export class AuthManager {
   }
 
   /**
+   * Get NetworkStatus instance for sync manager
+   */
+  getNetworkStatus(): NetworkStatus {
+    return this.networkStatus;
+  }
+
+  /**
+   * Get access token from current session
+   * Returns null if no active session
+   */
+  async getAccessToken(): Promise<string | null> {
+    const session = await this.tokenStorage.getActiveSession();
+    return session?.accessToken ?? null;
+  }
+
+  /**
    * Login with username and password
    * Tries DummyJSON API first, falls back to local SQLite authentication
    */

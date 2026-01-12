@@ -150,5 +150,28 @@ electron.contextBridge.exposeInMainWorld("api", {
     readProofFile: (paymentIdOrPath) => electron.ipcRenderer.invoke("payments:readProofFile", paymentIdOrPath),
     openProofWithViewer: (paymentId) => electron.ipcRenderer.invoke("payments:openProofWithViewer", paymentId),
     saveProofAs: (paymentId, fileName) => electron.ipcRenderer.invoke("payments:saveProofAs", paymentId, fileName)
+  },
+  settings: {
+    getAll: () => electron.ipcRenderer.invoke("settings:getAll"),
+    get: (key) => electron.ipcRenderer.invoke("settings:get", key),
+    getValue: (key, defaultValue) => electron.ipcRenderer.invoke("settings:getValue", key, defaultValue),
+    set: (key, value, options) => electron.ipcRenderer.invoke("settings:set", key, value, options),
+    setMultiple: (settings) => electron.ipcRenderer.invoke("settings:setMultiple", settings),
+    getByCategory: (category) => electron.ipcRenderer.invoke("settings:getByCategory", category),
+    testConnection: (url) => electron.ipcRenderer.invoke("settings:testConnection", url)
+  },
+  sync: {
+    getStats: () => electron.ipcRenderer.invoke("sync:getStats"),
+    getLogs: (filters) => electron.ipcRenderer.invoke("sync:getLogs", filters),
+    syncAll: () => electron.ipcRenderer.invoke("sync:syncAll"),
+    syncEntity: (entityType, direction) => electron.ipcRenderer.invoke("sync:syncEntity", entityType, direction),
+    retry: (syncId) => electron.ipcRenderer.invoke("sync:retry", syncId),
+    retryFailed: () => electron.ipcRenderer.invoke("sync:retryFailed"),
+    startScheduler: () => electron.ipcRenderer.invoke("sync:startScheduler"),
+    stopScheduler: () => electron.ipcRenderer.invoke("sync:stopScheduler"),
+    isOnline: () => electron.ipcRenderer.invoke("sync:isOnline"),
+    getNetworkStatus: () => electron.ipcRenderer.invoke("sync:getNetworkStatus"),
+    pushInitialData: (entityType) => electron.ipcRenderer.invoke("sync:pushInitialData", entityType),
+    pushAllInitialData: () => electron.ipcRenderer.invoke("sync:pushAllInitialData")
   }
 });

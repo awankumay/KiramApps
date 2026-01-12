@@ -1,3 +1,6 @@
+import { SettingsManager, DEFAULT_ERP_API_URL } from "./SettingsManager";
+import type { Database } from "better-sqlite3";
+
 export interface LoginResponse {
   id: number;
   username: string;
@@ -25,6 +28,13 @@ export interface UserProfile {
   image: string;
 }
 
+export interface ConnectionTestResult {
+  success: boolean;
+  latencyMs: number;
+  message: string;
+  serverVersion?: string;
+}
+
 export class NetworkError extends Error {
   constructor(message: string) {
     super(message);
@@ -40,12 +50,79 @@ export class AuthenticationError extends Error {
 }
 
 /**
- * ERPClient handles HTTP communication with DummyJSON Auth API
- * Provides methods for login, token refresh, and user profile retrieval
+ * ERPClient handles HTTP communication with ERP Cloud API
+ * Provides methods for login, token refresh, user profile retrieval, and connection testing
+ *
+ * The baseUrl can be configured via:
+ * 1. Constructor parameter (highest priority)
+ * 2. SettingsManager from database
+ * 3. Default fallback URL
  */
 export class ERPClient {
-  private readonly baseUrl = "http://localhost:8000/api";
-  private readonly timeout = 5000; // 5 seconds
+  private readonly baseUrl: string;
+  private readonly timeout: number;
+  private static instance: ERPClient | null = null;
+  private static settingsManager: SettingsManager | null = null;
+
+  /**
+   * Create ERPClient instance
+   * @param baseUrl - Optional base URL, if not provided will load from settings or use default
+   * @param timeout - Request timeout in milliseconds (default: 5000)
+   */
+  constructor(baseUrl?: string, timeout = 5000) {
+    this.baseUrl = baseUrl || this.loadBaseUrl();
+    this.timeout = timeout;
+  }
+
+  /**
+   * Load base URL from settings or use default
+   */
+  private loadBaseUrl(): string {
+    if (ERPClient.settingsManager) {
+      return ERPClient.settingsManager.getErpApiUrl();
+    }
+    return DEFAULT_ERP_API_URL;
+  }
+
+  /**
+   * Initialize SettingsManager for ERPClient
+   * Should be called once during app initialization
+   */
+  static initializeSettings(db: Database): void {
+    ERPClient.settingsManager = new SettingsManager(db);
+  }
+
+  /**
+   * Get the configured SettingsManager
+   */
+  static getSettingsManager(): SettingsManager | null {
+    return ERPClient.settingsManager;
+  }
+
+  /**
+   * Get or create default ERPClient instance
+   * Uses settings from database if available
+   */
+  static getDefault(): ERPClient {
+    if (!ERPClient.instance) {
+      ERPClient.instance = new ERPClient();
+    }
+    return ERPClient.instance;
+  }
+
+  /**
+   * Reset the default instance (useful when settings change)
+   */
+  static resetInstance(): void {
+    ERPClient.instance = null;
+  }
+
+  /**
+   * Get the current base URL
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
 
   /**
    * Login with username and password
@@ -186,5 +263,83 @@ export class ERPClient {
       }
       throw error;
     }
+  }
+
+  /**
+   * Test connection to ERP Cloud API
+   * Attempts to reach the health check or base endpoint
+   */
+  async testConnection(): Promise<ConnectionTestResult> {
+    const startTime = Date.now();
+
+    try {
+      // Try health check endpoint first, fallback to base URL
+      const endpoints = [`${this.baseUrl}/health`, `${this.baseUrl}`];
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await this.fetchWithTimeout(endpoint, {
+            method: "GET",
+            headers: {
+              "User-Agent": "KiramApps/Electron",
+            },
+          });
+
+          const latencyMs = Date.now() - startTime;
+
+          if (response.ok) {
+            let serverVersion: string | undefined;
+            try {
+              const data = await response.json();
+              serverVersion = data.version || data.app_version;
+            } catch {
+              // Response might not be JSON
+            }
+
+            return {
+              success: true,
+              latencyMs,
+              message: "Connection successful",
+              serverVersion,
+            };
+          }
+
+          // If response is not ok but we got a response, server is reachable
+          if (response.status < 500) {
+            return {
+              success: true,
+              latencyMs,
+              message: `Server reachable (status: ${response.status})`,
+            };
+          }
+        } catch {
+          // Try next endpoint
+          continue;
+        }
+      }
+
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: "Could not reach server",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: error instanceof Error ? error.message : "Connection failed",
+      };
+    }
+  }
+
+  /**
+   * Static method to test connection to a specific URL
+   */
+  static async testConnectionTo(
+    url: string,
+    timeout = 5000
+  ): Promise<ConnectionTestResult> {
+    const client = new ERPClient(url, timeout);
+    return client.testConnection();
   }
 }

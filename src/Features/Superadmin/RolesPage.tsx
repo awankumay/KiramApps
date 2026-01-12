@@ -36,6 +36,8 @@ const permissionDescriptions: Record<Permission, string> = {
   [Permission.VIEW_REPORTS]: "Melihat laporan sistem",
   [Permission.MANAGE_CUSTOMERS]: "Mengelola data customer",
   [Permission.MANAGE_VEHICLES]: "Mengelola data kendaraan",
+  [Permission.MANAGE_SETTINGS]: "Mengelola pengaturan sistem",
+  [Permission.MANAGE_SYNC]: "Mengelola sinkronisasi data",
 };
 
 // Role descriptions

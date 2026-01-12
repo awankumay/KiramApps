@@ -334,6 +334,232 @@ class AuditLogger {
     }
   }
 }
+const DEFAULT_ERP_API_URL = "http://localhost:8000/api";
+class SettingsManager {
+  constructor(db) {
+    __publicField(this, "db");
+    __publicField(this, "cache", /* @__PURE__ */ new Map());
+    __publicField(this, "cacheValid", false);
+    this.db = db;
+  }
+  /**
+   * Load all settings into cache
+   */
+  loadCache() {
+    if (this.cacheValid) return;
+    try {
+      const stmt = this.db.prepare("SELECT * FROM app_settings");
+      const rows = stmt.all();
+      this.cache.clear();
+      for (const row of rows) {
+        this.cache.set(row.key, row);
+      }
+      this.cacheValid = true;
+    } catch (error2) {
+      console.error("[SettingsManager] Failed to load cache:", error2);
+      this.cacheValid = false;
+    }
+  }
+  /**
+   * Invalidate cache (call after updates)
+   */
+  invalidateCache() {
+    this.cacheValid = false;
+    this.cache.clear();
+  }
+  /**
+   * Get raw setting record by key
+   */
+  getRaw(key) {
+    this.loadCache();
+    return this.cache.get(key) || null;
+  }
+  /**
+   * Get setting value as string
+   */
+  getString(key, defaultValue = "") {
+    const setting = this.getRaw(key);
+    if (!setting || setting.value === null) return defaultValue;
+    return setting.value;
+  }
+  /**
+   * Get setting value as number
+   */
+  getNumber(key, defaultValue = 0) {
+    const setting = this.getRaw(key);
+    if (!setting || setting.value === null) return defaultValue;
+    const num = parseFloat(setting.value);
+    return isNaN(num) ? defaultValue : num;
+  }
+  /**
+   * Get setting value as boolean
+   */
+  getBoolean(key, defaultValue = false) {
+    const setting = this.getRaw(key);
+    if (!setting || setting.value === null) return defaultValue;
+    return setting.value === "1" || setting.value.toLowerCase() === "true";
+  }
+  /**
+   * Get setting value as JSON object
+   */
+  getJSON(key, defaultValue = null) {
+    const setting = this.getRaw(key);
+    if (!setting || setting.value === null) return defaultValue;
+    try {
+      return JSON.parse(setting.value);
+    } catch {
+      return defaultValue;
+    }
+  }
+  /**
+   * Get typed setting value based on stored type
+   */
+  get(key, defaultValue) {
+    const setting = this.getRaw(key);
+    if (!setting || setting.value === null) {
+      return defaultValue;
+    }
+    switch (setting.type) {
+      case "number":
+        return this.getNumber(key, defaultValue);
+      case "boolean":
+        return this.getBoolean(key, defaultValue);
+      case "json":
+        return this.getJSON(key, defaultValue);
+      default:
+        return this.getString(key, defaultValue);
+    }
+  }
+  /**
+   * Set setting value
+   */
+  set(key, value, options) {
+    try {
+      let stringValue;
+      let type2 = (options == null ? void 0 : options.type) || "string";
+      if (typeof value === "boolean") {
+        stringValue = value ? "1" : "0";
+        type2 = (options == null ? void 0 : options.type) || "boolean";
+      } else if (typeof value === "number") {
+        stringValue = value.toString();
+        type2 = (options == null ? void 0 : options.type) || "number";
+      } else if (typeof value === "object") {
+        stringValue = JSON.stringify(value);
+        type2 = (options == null ? void 0 : options.type) || "json";
+      } else {
+        stringValue = value;
+      }
+      const existing = this.getRaw(key);
+      if (existing) {
+        const stmt = this.db.prepare(`
+          UPDATE app_settings 
+          SET value = ?, type = ?, updated_at = datetime('now')
+          WHERE key = ?
+        `);
+        stmt.run(stringValue, type2, key);
+      } else {
+        const stmt = this.db.prepare(`
+          INSERT INTO app_settings (key, value, type, category, description)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+          key,
+          stringValue,
+          type2,
+          (options == null ? void 0 : options.category) || "general",
+          (options == null ? void 0 : options.description) || null
+        );
+      }
+      this.invalidateCache();
+      return true;
+    } catch (error2) {
+      console.error(`[SettingsManager] Failed to set ${key}:`, error2);
+      return false;
+    }
+  }
+  /**
+   * Delete a setting
+   */
+  delete(key) {
+    try {
+      const stmt = this.db.prepare("DELETE FROM app_settings WHERE key = ?");
+      stmt.run(key);
+      this.invalidateCache();
+      return true;
+    } catch (error2) {
+      console.error(`[SettingsManager] Failed to delete ${key}:`, error2);
+      return false;
+    }
+  }
+  /**
+   * Get all settings
+   */
+  getAll() {
+    this.loadCache();
+    return Array.from(this.cache.values());
+  }
+  /**
+   * Get settings by category
+   */
+  getByCategory(category) {
+    return this.getAll().filter((s) => s.category === category);
+  }
+  /**
+   * Get ERP API URL with fallback
+   */
+  getErpApiUrl() {
+    return this.getString("erp_api_url", DEFAULT_ERP_API_URL);
+  }
+  /**
+   * Get sync settings as object
+   */
+  getSyncSettings() {
+    return {
+      enabled: this.getBoolean("sync_enabled", true),
+      intervalMinutes: this.getNumber("sync_interval_minutes", 10),
+      onStartup: this.getBoolean("sync_on_startup", true),
+      batchSize: this.getNumber("sync_batch_size", 50),
+      retryMax: this.getNumber("sync_retry_max", 5),
+      timeoutSeconds: this.getNumber("sync_timeout_seconds", 30)
+    };
+  }
+  /**
+   * Update multiple settings at once
+   */
+  setMultiple(settings2) {
+    try {
+      const transaction = this.db.transaction(() => {
+        for (const setting of settings2) {
+          this.set(setting.key, setting.value, {
+            type: setting.type,
+            category: setting.category,
+            description: setting.description
+          });
+        }
+      });
+      transaction();
+      this.invalidateCache();
+      return true;
+    } catch (error2) {
+      console.error(
+        "[SettingsManager] Failed to set multiple settings:",
+        error2
+      );
+      return false;
+    }
+  }
+  /**
+   * Validate URL format
+   */
+  static isValidUrl(url2) {
+    try {
+      new URL(url2);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
 class NetworkError extends Error {
   constructor(message) {
     super(message);
@@ -347,12 +573,62 @@ class AuthenticationError extends Error {
     this.name = "AuthenticationError";
   }
 }
-class ERPClient {
-  constructor() {
-    __publicField(this, "baseUrl", "http://localhost:8000/api");
-    __publicField(this, "timeout", 5e3);
+const _ERPClient = class _ERPClient {
+  /**
+   * Create ERPClient instance
+   * @param baseUrl - Optional base URL, if not provided will load from settings or use default
+   * @param timeout - Request timeout in milliseconds (default: 5000)
+   */
+  constructor(baseUrl, timeout = 5e3) {
+    __publicField(this, "baseUrl");
+    __publicField(this, "timeout");
+    this.baseUrl = baseUrl || this.loadBaseUrl();
+    this.timeout = timeout;
   }
-  // 5 seconds
+  /**
+   * Load base URL from settings or use default
+   */
+  loadBaseUrl() {
+    if (_ERPClient.settingsManager) {
+      return _ERPClient.settingsManager.getErpApiUrl();
+    }
+    return DEFAULT_ERP_API_URL;
+  }
+  /**
+   * Initialize SettingsManager for ERPClient
+   * Should be called once during app initialization
+   */
+  static initializeSettings(db) {
+    _ERPClient.settingsManager = new SettingsManager(db);
+  }
+  /**
+   * Get the configured SettingsManager
+   */
+  static getSettingsManager() {
+    return _ERPClient.settingsManager;
+  }
+  /**
+   * Get or create default ERPClient instance
+   * Uses settings from database if available
+   */
+  static getDefault() {
+    if (!_ERPClient.instance) {
+      _ERPClient.instance = new _ERPClient();
+    }
+    return _ERPClient.instance;
+  }
+  /**
+   * Reset the default instance (useful when settings change)
+   */
+  static resetInstance() {
+    _ERPClient.instance = null;
+  }
+  /**
+   * Get the current base URL
+   */
+  getBaseUrl() {
+    return this.baseUrl;
+  }
   /**
    * Login with username and password
    */
@@ -475,13 +751,78 @@ class ERPClient {
       throw error2;
     }
   }
-}
+  /**
+   * Test connection to ERP Cloud API
+   * Attempts to reach the health check or base endpoint
+   */
+  async testConnection() {
+    const startTime = Date.now();
+    try {
+      const endpoints = [`${this.baseUrl}/health`, `${this.baseUrl}`];
+      for (const endpoint of endpoints) {
+        try {
+          const response = await this.fetchWithTimeout(endpoint, {
+            method: "GET",
+            headers: {
+              "User-Agent": "KiramApps/Electron"
+            }
+          });
+          const latencyMs = Date.now() - startTime;
+          if (response.ok) {
+            let serverVersion;
+            try {
+              const data2 = await response.json();
+              serverVersion = data2.version || data2.app_version;
+            } catch {
+            }
+            return {
+              success: true,
+              latencyMs,
+              message: "Connection successful",
+              serverVersion
+            };
+          }
+          if (response.status < 500) {
+            return {
+              success: true,
+              latencyMs,
+              message: `Server reachable (status: ${response.status})`
+            };
+          }
+        } catch {
+          continue;
+        }
+      }
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: "Could not reach server"
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: error2 instanceof Error ? error2.message : "Connection failed"
+      };
+    }
+  }
+  /**
+   * Static method to test connection to a specific URL
+   */
+  static async testConnectionTo(url2, timeout = 5e3) {
+    const client = new _ERPClient(url2, timeout);
+    return client.testConnection();
+  }
+};
+__publicField(_ERPClient, "instance", null);
+__publicField(_ERPClient, "settingsManager", null);
+let ERPClient = _ERPClient;
 class NetworkStatus extends EventEmitter {
   constructor() {
     super();
     __publicField(this, "_isOnline", true);
     __publicField(this, "checkInterval", null);
-    __publicField(this, "pingUrl", "https://dummyjson.com");
+    __publicField(this, "pingUrl", "http://localhost:8000/api/v1/healthz");
     this.startMonitoring();
   }
   /**
@@ -7178,6 +7519,20 @@ class AuthManager {
    */
   getLoaderManager() {
     return this.loaderManager;
+  }
+  /**
+   * Get NetworkStatus instance for sync manager
+   */
+  getNetworkStatus() {
+    return this.networkStatus;
+  }
+  /**
+   * Get access token from current session
+   * Returns null if no active session
+   */
+  async getAccessToken() {
+    const session = await this.tokenStorage.getActiveSession();
+    return (session == null ? void 0 : session.accessToken) ?? null;
   }
   /**
    * Login with username and password
@@ -28717,14 +29072,14 @@ function getData$1($data, { dataLevel, dataNames, dataPathArr }) {
 validate$1.getData = getData$1;
 var validation_error$1 = {};
 Object.defineProperty(validation_error$1, "__esModule", { value: true });
-class ValidationError extends Error {
+let ValidationError$1 = class ValidationError extends Error {
   constructor(errors2) {
     super("validation failed");
     this.errors = errors2;
     this.ajv = this.validation = true;
   }
-}
-validation_error$1.default = ValidationError;
+};
+validation_error$1.default = ValidationError$1;
 var ref_error$1 = {};
 Object.defineProperty(ref_error$1, "__esModule", { value: true });
 const resolve_1$4 = resolve$4;
@@ -44330,6 +44685,1211 @@ const version = "1.0.0-dev";
 const packageJson = {
   version
 };
+class SyncService {
+  constructor(baseUrl, accessToken, timeout = 3e4) {
+    __publicField(this, "baseUrl");
+    __publicField(this, "timeout");
+    __publicField(this, "accessToken");
+    this.baseUrl = baseUrl;
+    this.accessToken = accessToken;
+    this.timeout = timeout;
+  }
+  /**
+   * Update access token (e.g., after refresh)
+   */
+  setAccessToken(token) {
+    this.accessToken = token;
+  }
+  /**
+   * Generate unique sync ID
+   */
+  static generateSyncId() {
+    return `sync-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+  /**
+   * Push single record to ERP Cloud
+   */
+  async push(entityType, action2, data2) {
+    const syncId = SyncService.generateSyncId();
+    ({
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    console.log(
+      `[SyncService] Pushing ${action2} for ${entityType} | SyncID: ${syncId}`
+    );
+    console.log(
+      `[SyncService] Payload:`,
+      JSON.stringify(
+        {
+          entity_type: entityType,
+          action: action2,
+          data: {
+            sync_id: syncId,
+            ...data2
+          }
+        },
+        null,
+        2
+      )
+    );
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/push`,
+        {
+          method: "POST",
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            entity_type: entityType,
+            action: action2,
+            data: {
+              sync_id: syncId,
+              ...data2
+            }
+          })
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(
+          `[SyncService] ✗ Push failed for ${entityType} (SyncID: ${syncId}):`,
+          errorData.message || `HTTP ${response.status}`
+        );
+        return {
+          success: false,
+          syncId,
+          action: action2,
+          message: errorData.message || `HTTP ${response.status}`
+        };
+      }
+      const result = await response.json();
+      console.log(
+        `[SyncService] ✓ Push successful for ${entityType} (SyncID: ${syncId}) | EntityID: ${result.entity_id || "N/A"}`
+      );
+      return {
+        success: true,
+        syncId: result.sync_id || syncId,
+        entityId: result.entity_id,
+        action: action2,
+        message: result.message || "Sync completed"
+      };
+    } catch (error2) {
+      console.error(
+        `[SyncService] ✗ Push error for ${entityType} (SyncID: ${syncId}):`,
+        error2 instanceof Error ? error2.message : error2
+      );
+      return {
+        success: false,
+        syncId,
+        action: action2,
+        message: error2 instanceof Error ? error2.message : "Push failed"
+      };
+    }
+  }
+  /**
+   * Push multiple records in batch
+   */
+  async pushBatch(items2) {
+    const payloads = items2.map((item) => ({
+      entity_type: item.entityType,
+      action: item.action,
+      data: {
+        sync_id: SyncService.generateSyncId(),
+        ...item.data
+      }
+    }));
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/push-batch`,
+        {
+          method: "POST",
+          headers: this.getHeaders(),
+          body: JSON.stringify({ items: payloads })
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          success: false,
+          total: items2.length,
+          processed: 0,
+          failed: items2.length,
+          results: payloads.map((p) => ({
+            success: false,
+            syncId: p.data.sync_id,
+            action: p.action,
+            message: errorData.message || `HTTP ${response.status}`
+          }))
+        };
+      }
+      const result = await response.json();
+      return {
+        success: result.success,
+        total: result.total || items2.length,
+        processed: result.processed || 0,
+        failed: result.failed || 0,
+        results: result.results || payloads.map((p) => ({
+          success: true,
+          syncId: p.data.sync_id,
+          action: p.action
+        }))
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        total: items2.length,
+        processed: 0,
+        failed: items2.length,
+        results: payloads.map((p) => ({
+          success: false,
+          syncId: p.data.sync_id,
+          action: p.action,
+          message: error2 instanceof Error ? error2.message : "Batch push failed"
+        }))
+      };
+    }
+  }
+  /**
+   * Pull records from ERP Cloud
+   */
+  async pull(entityType, options) {
+    try {
+      const params = new URLSearchParams();
+      params.append("entity_type", entityType);
+      if (options == null ? void 0 : options.since) params.append("since", options.since);
+      if (options == null ? void 0 : options.page) params.append("page", options.page.toString());
+      if (options == null ? void 0 : options.perPage)
+        params.append("per_page", options.perPage.toString());
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/pull?${params.toString()}`,
+        {
+          method: "GET",
+          headers: this.getHeaders()
+        }
+      );
+      if (!response.ok) {
+        await response.json().catch(() => ({}));
+        return {
+          success: false,
+          entityType,
+          data: []
+        };
+      }
+      const result = await response.json();
+      return {
+        success: true,
+        entityType,
+        data: result.data || [],
+        pagination: result.pagination ? {
+          currentPage: result.pagination.current_page,
+          lastPage: result.pagination.last_page,
+          perPage: result.pagination.per_page,
+          total: result.pagination.total
+        } : void 0
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        entityType,
+        data: []
+      };
+    }
+  }
+  /**
+   * Get sync status by sync ID
+   */
+  async getStatus(syncId) {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/status?sync_id=${encodeURIComponent(syncId)}`,
+        {
+          method: "GET",
+          headers: this.getHeaders()
+        }
+      );
+      if (!response.ok) {
+        return {
+          success: false,
+          syncId,
+          status: "failed",
+          error: `HTTP ${response.status}`
+        };
+      }
+      const result = await response.json();
+      return {
+        success: true,
+        syncId,
+        status: result.status || "completed",
+        syncedAt: result.synced_at
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        syncId,
+        status: "failed",
+        error: error2 instanceof Error ? error2.message : "Status check failed"
+      };
+    }
+  }
+  /**
+   * Get sync statistics
+   */
+  async getStats(period = "day") {
+    var _a2, _b, _c, _d, _e, _f, _g;
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/stats?period=${period}`,
+        {
+          method: "GET",
+          headers: this.getHeaders()
+        }
+      );
+      if (!response.ok) {
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      const result = await response.json();
+      return {
+        success: true,
+        stats: {
+          total: ((_a2 = result.stats) == null ? void 0 : _a2.total) || 0,
+          completed: ((_b = result.stats) == null ? void 0 : _b.completed) || 0,
+          failed: ((_c = result.stats) == null ? void 0 : _c.failed) || 0,
+          pending: ((_d = result.stats) == null ? void 0 : _d.pending) || 0,
+          successRate: ((_e = result.stats) == null ? void 0 : _e.success_rate) || 0,
+          byEntity: ((_f = result.stats) == null ? void 0 : _f.by_entity) || {},
+          byDirection: ((_g = result.stats) == null ? void 0 : _g.by_direction) || {}
+        }
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Stats fetch failed"
+      };
+    }
+  }
+  /**
+   * Get sync logs from ERP
+   */
+  async getLogs(filters) {
+    var _a2;
+    try {
+      const params = new URLSearchParams();
+      if (filters == null ? void 0 : filters.entityType) params.append("entity_type", filters.entityType);
+      if (filters == null ? void 0 : filters.status) params.append("status", filters.status);
+      if (filters == null ? void 0 : filters.direction) params.append("direction", filters.direction);
+      if (filters == null ? void 0 : filters.fromDate) params.append("from_date", filters.fromDate);
+      if (filters == null ? void 0 : filters.toDate) params.append("to_date", filters.toDate);
+      if (filters == null ? void 0 : filters.page) params.append("page", filters.page.toString());
+      if (filters == null ? void 0 : filters.perPage)
+        params.append("per_page", filters.perPage.toString());
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/sync/logs?${params.toString()}`,
+        {
+          method: "GET",
+          headers: this.getHeaders()
+        }
+      );
+      if (!response.ok) {
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      const result = await response.json();
+      return {
+        success: true,
+        logs: ((_a2 = result.data) == null ? void 0 : _a2.map(
+          (log) => ({
+            syncId: log.sync_id,
+            entityType: log.entity_type,
+            entityId: log.entity_id,
+            action: log.action,
+            direction: log.direction,
+            status: log.status,
+            errorMessage: log.error_message,
+            syncedAt: log.synced_at,
+            createdAt: log.created_at
+          })
+        )) || [],
+        pagination: result.pagination ? {
+          currentPage: result.pagination.current_page,
+          lastPage: result.pagination.last_page,
+          perPage: result.pagination.per_page,
+          total: result.pagination.total
+        } : void 0
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Logs fetch failed"
+      };
+    }
+  }
+  /**
+   * Get request headers
+   */
+  getHeaders() {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.accessToken}`,
+      "User-Agent": "KiramApps/Electron",
+      "X-Device-ID": this.getDeviceId()
+    };
+  }
+  /**
+   * Get device ID for tracking
+   */
+  getDeviceId() {
+    return `electron-${process.platform}-${Date.now()}`;
+  }
+  /**
+   * Fetch with timeout support
+   */
+  async fetchWithTimeout(url2, options) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      const response = await fetch(url2, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error2) {
+      clearTimeout(timeoutId);
+      if (error2 instanceof Error && error2.name === "AbortError") {
+        throw new NetworkError("Request timeout");
+      }
+      throw error2;
+    }
+  }
+}
+class SyncManager {
+  constructor(db, networkStatus2) {
+    __publicField(this, "db");
+    __publicField(this, "settingsManager");
+    __publicField(this, "syncService", null);
+    __publicField(this, "networkStatus");
+    __publicField(this, "syncQueue", []);
+    __publicField(this, "isProcessing", false);
+    __publicField(this, "schedulerInterval", null);
+    this.db = db;
+    this.settingsManager = new SettingsManager(db);
+    this.networkStatus = networkStatus2;
+  }
+  /**
+   * Initialize sync service with access token
+   */
+  initialize(accessToken) {
+    const baseUrl = this.settingsManager.getErpApiUrl();
+    const settings2 = this.settingsManager.getSyncSettings();
+    this.syncService = new SyncService(
+      baseUrl,
+      accessToken,
+      settings2.timeoutSeconds * 1e3
+    );
+  }
+  /**
+   * Update access token (e.g., after refresh)
+   */
+  updateAccessToken(accessToken) {
+    if (this.syncService) {
+      this.syncService.setAccessToken(accessToken);
+    }
+  }
+  /**
+   * Start scheduled sync
+   */
+  startScheduler() {
+    if (this.schedulerInterval) {
+      clearInterval(this.schedulerInterval);
+    }
+    const settings2 = this.settingsManager.getSyncSettings();
+    if (!settings2.enabled) {
+      console.log("[SyncManager] Auto sync is disabled");
+      return;
+    }
+    const intervalMs = settings2.intervalMinutes * 60 * 1e3;
+    this.schedulerInterval = setInterval(() => {
+      this.syncAll();
+    }, intervalMs);
+    console.log(
+      `[SyncManager] Scheduler started with ${settings2.intervalMinutes} minute interval`
+    );
+    if (settings2.onStartup) {
+      setTimeout(() => this.syncAll(), 5e3);
+    }
+  }
+  /**
+   * Stop scheduled sync
+   */
+  stopScheduler() {
+    if (this.schedulerInterval) {
+      clearInterval(this.schedulerInterval);
+      this.schedulerInterval = null;
+      console.log("[SyncManager] Scheduler stopped");
+    }
+  }
+  /**
+   * Add item to sync queue
+   */
+  async queueSync(entityType, action2, data2, entityId) {
+    const syncId = SyncService.generateSyncId();
+    console.log(
+      `[SyncManager] Queueing ${action2} for ${entityType}${entityId ? ` (ID: ${entityId})` : ""} | SyncID: ${syncId}`
+    );
+    await this.createSyncLog({
+      syncId,
+      entityType,
+      entityId,
+      action: action2,
+      direction: "push",
+      status: "pending",
+      payload: data2
+    });
+    this.syncQueue.push({
+      entityType,
+      entityId,
+      action: action2,
+      data: data2,
+      retryCount: 0
+    });
+    console.log(
+      `[SyncManager] Added to queue. Queue size: ${this.syncQueue.length} items`
+    );
+    if (this.networkStatus.getStatus() && !this.isProcessing) {
+      console.log(`[SyncManager] Network online, processing queue immediately`);
+      this.processQueue();
+    } else {
+      console.log(
+        `[SyncManager] Network offline or queue processing in progress. Queue size: ${this.syncQueue.length}`
+      );
+    }
+    return syncId;
+  }
+  /**
+   * Process sync queue
+   */
+  async processQueue() {
+    if (this.isProcessing || !this.syncService || !this.networkStatus.isOnline()) {
+      return;
+    }
+    this.isProcessing = true;
+    const settings2 = this.settingsManager.getSyncSettings();
+    const maxRetries = settings2.retryMax;
+    const batchSize = settings2.batchSize;
+    try {
+      const batch = this.syncQueue.splice(0, batchSize);
+      if (batch.length === 0) {
+        const pendingLogs = await this.getPendingSyncLogs();
+        for (const log of pendingLogs.slice(0, batchSize)) {
+          try {
+            const payload = log.payload ? JSON.parse(log.payload) : {};
+            batch.push({
+              entityType: log.entity_type,
+              entityId: log.entity_id || void 0,
+              action: log.action,
+              data: payload,
+              retryCount: log.retry_count
+            });
+          } catch {
+            console.error(
+              `[SyncManager] Failed to parse payload for ${log.sync_id}`
+            );
+          }
+        }
+      }
+      if (batch.length === 0) {
+        this.isProcessing = false;
+        return;
+      }
+      if (batch.length > 1) {
+        const response = await this.syncService.pushBatch(
+          batch.map((item) => ({
+            entityType: item.entityType,
+            action: item.action,
+            data: item.data
+          }))
+        );
+        for (let i = 0; i < response.results.length; i++) {
+          const result = response.results[i];
+          const item = batch[i];
+          if (result.success) {
+            await this.updateSyncLogStatus(result.syncId, "completed");
+          } else {
+            if ((item.retryCount || 0) < maxRetries) {
+              this.syncQueue.push({
+                ...item,
+                retryCount: (item.retryCount || 0) + 1
+              });
+              await this.updateSyncLogRetry(result.syncId, result.message);
+            } else {
+              await this.updateSyncLogStatus(
+                result.syncId,
+                "failed",
+                result.message
+              );
+            }
+          }
+        }
+      } else {
+        const item = batch[0];
+        const response = await this.syncService.push(
+          item.entityType,
+          item.action,
+          item.data
+        );
+        if (response.success) {
+          await this.updateSyncLogStatus(response.syncId, "completed");
+        } else {
+          if ((item.retryCount || 0) < maxRetries) {
+            this.syncQueue.push({
+              ...item,
+              retryCount: (item.retryCount || 0) + 1
+            });
+            await this.updateSyncLogRetry(response.syncId, response.message);
+          } else {
+            await this.updateSyncLogStatus(
+              response.syncId,
+              "failed",
+              response.message
+            );
+          }
+        }
+      }
+      if (this.syncQueue.length > 0) {
+        setTimeout(() => this.processQueue(), 1e3);
+      }
+    } catch (error2) {
+      console.error("[SyncManager] Queue processing error:", error2);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+  /**
+   * Sync all entities
+   */
+  async syncAll() {
+    if (!this.syncService || !this.networkStatus.isOnline()) {
+      return {
+        success: false,
+        message: "Not connected or sync service not initialized"
+      };
+    }
+    console.log("[SyncManager] Starting full sync...");
+    try {
+      await this.syncCustomers();
+      await this.syncPaymentVerifications();
+      await this.processQueue();
+      console.log("[SyncManager] Full sync completed");
+      return { success: true, message: "Sync completed successfully" };
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : "Sync failed";
+      console.error("[SyncManager] Full sync failed:", message);
+      return { success: false, message };
+    }
+  }
+  /**
+   * Sync customers (bidirectional)
+   */
+  async syncCustomers(direction) {
+    if (!this.syncService) {
+      return { success: false, message: "Sync service not initialized" };
+    }
+    console.log("[SyncManager] Syncing customers...");
+    try {
+      if (direction !== "push") {
+        const lastSync = await this.getLastSyncTime("customer", "pull");
+        const pullResult = await this.syncService.pull("customer", {
+          since: lastSync || void 0
+        });
+        if (pullResult.success && pullResult.data.length > 0) {
+          for (const customer of pullResult.data) {
+            await this.applyCustomerChange(
+              customer
+            );
+          }
+          console.log(
+            `[SyncManager] Pulled ${pullResult.data.length} customer changes`
+          );
+        }
+      }
+      if (direction !== "pull") {
+        await this.processQueue();
+      }
+      return { success: true, message: "Customers synced successfully" };
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : "Customer sync failed";
+      console.error("[SyncManager] Customer sync failed:", message);
+      return { success: false, message };
+    }
+  }
+  /**
+   * Apply customer change from pull
+   * Handles partial data from ERP by merging with existing local data
+   */
+  async applyCustomerChange(data2) {
+    try {
+      const existing = this.db.prepare("SELECT * FROM customers WHERE id = ?").get(data2.id);
+      const mergedData = {
+        id: data2.id,
+        code: data2.code ?? (existing == null ? void 0 : existing.code) ?? `CUST-${data2.id}`,
+        name: data2.name ?? (existing == null ? void 0 : existing.name) ?? "Unknown Customer",
+        category: data2.category ?? (existing == null ? void 0 : existing.category) ?? "PERSONAL",
+        is_active: data2.is_active !== void 0 ? data2.is_active : existing ? Boolean(existing.is_active) : true
+      };
+      if (existing) {
+        const updateStmt = this.db.prepare(`
+          UPDATE customers 
+          SET code = ?, name = ?, category = ?, is_active = ?, synced_at = datetime('now'), updated_at = datetime('now')
+          WHERE id = ?
+        `);
+        updateStmt.run(
+          mergedData.code,
+          mergedData.name,
+          mergedData.category,
+          mergedData.is_active ? 1 : 0,
+          mergedData.id
+        );
+      } else {
+        const insertStmt = this.db.prepare(`
+          INSERT INTO customers (id, code, name, category, is_active, synced_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        `);
+        insertStmt.run(
+          mergedData.id,
+          mergedData.code,
+          mergedData.name,
+          mergedData.category,
+          mergedData.is_active ? 1 : 0
+        );
+      }
+      await this.createSyncLog({
+        syncId: SyncService.generateSyncId(),
+        entityType: "customer",
+        entityId: data2.id,
+        action: existing ? "update" : "create",
+        direction: "pull",
+        status: "completed",
+        payload: mergedData
+      });
+    } catch (error2) {
+      console.error("[SyncManager] Failed to apply customer change:", error2);
+    }
+  }
+  /**
+   * Sync payment verifications (bidirectional)
+   */
+  async syncPaymentVerifications(direction) {
+    if (!this.syncService) {
+      return { success: false, message: "Sync service not initialized" };
+    }
+    console.log("[SyncManager] Syncing payment verifications...");
+    try {
+      if (direction !== "push") {
+        const lastSync = await this.getLastSyncTime(
+          "payment_verification",
+          "pull"
+        );
+        const pullResult = await this.syncService.pull("payment_verification", {
+          since: lastSync || void 0
+        });
+        if (pullResult.success && pullResult.data.length > 0) {
+          for (const verification of pullResult.data) {
+            await this.applyPaymentVerificationChange(
+              verification
+            );
+          }
+          console.log(
+            `[SyncManager] Pulled ${pullResult.data.length} verification changes`
+          );
+        }
+      }
+      if (direction !== "pull") {
+        await this.processQueue();
+      }
+      return {
+        success: true,
+        message: "Payment verifications synced successfully"
+      };
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : "Payment verification sync failed";
+      console.error("[SyncManager] Payment verification sync failed:", message);
+      return { success: false, message };
+    }
+  }
+  /**
+   * Apply payment verification change from pull
+   */
+  async applyPaymentVerificationChange(data2) {
+    try {
+      const stmt = this.db.prepare(`
+        UPDATE payments 
+        SET verification_status = ?, verified_by = ?, rejection_reason = ?, synced_at = datetime('now')
+        WHERE id = ?
+      `);
+      stmt.run(
+        data2.verification_status,
+        data2.verified_by,
+        data2.rejection_reason,
+        data2.id
+      );
+      await this.createSyncLog({
+        syncId: SyncService.generateSyncId(),
+        entityType: "payment_verification",
+        entityId: data2.id,
+        action: "update",
+        direction: "pull",
+        status: "completed",
+        payload: data2
+      });
+    } catch (error2) {
+      console.error(
+        "[SyncManager] Failed to apply verification change:",
+        error2
+      );
+    }
+  }
+  /**
+   * Sync items (bidirectional - pull from ERP master data)
+   * Note: 'item' entity type is for reference data (master items from ERP)
+   * Not to be confused with 'transaction_item' which is transaction line items
+   */
+  async syncItems(direction) {
+    if (!this.syncService) {
+      return { success: false, message: "Sync service not initialized" };
+    }
+    console.log("[SyncManager] Syncing items...");
+    try {
+      if (direction !== "push") {
+        const lastSync = await this.getLastSyncTime("item", "pull");
+        const pullResult = await this.syncService.pull("item", {
+          since: lastSync || void 0
+        });
+        if (pullResult.success && pullResult.data.length > 0) {
+          for (const item of pullResult.data) {
+            await this.applyItemChange(
+              item
+            );
+          }
+          console.log(
+            `[SyncManager] Pulled ${pullResult.data.length} item changes`
+          );
+        }
+      }
+      if (direction !== "pull") {
+        await this.processQueue();
+      }
+      return { success: true, message: "Items synced successfully" };
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : "Item sync failed";
+      console.error("[SyncManager] Item sync failed:", message);
+      return { success: false, message };
+    }
+  }
+  /**
+   * Apply item change from pull (master data from ERP)
+   */
+  async applyItemChange(data2) {
+    try {
+      const existing = this.db.prepare("SELECT * FROM items WHERE id = ?").get(data2.id);
+      const mergedData = {
+        id: data2.id,
+        code: data2.code ?? (existing == null ? void 0 : existing.code) ?? `ITEM-${data2.id}`,
+        name: data2.name ?? (existing == null ? void 0 : existing.name) ?? "Unknown Item",
+        unit: data2.unit ?? (existing == null ? void 0 : existing.unit) ?? "unit",
+        price: data2.price ?? (existing == null ? void 0 : existing.price) ?? 0,
+        is_active: data2.is_active !== void 0 ? data2.is_active : existing ? Boolean(existing.is_active) : true
+      };
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO items (id, code, name, unit, price, is_active, synced_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `);
+      stmt.run(
+        mergedData.id,
+        mergedData.code,
+        mergedData.name,
+        mergedData.unit,
+        mergedData.price,
+        mergedData.is_active ? 1 : 0
+      );
+      await this.createSyncLog({
+        syncId: SyncService.generateSyncId(),
+        entityType: "item",
+        entityId: data2.id,
+        action: existing ? "update" : "create",
+        direction: "pull",
+        status: "completed",
+        payload: mergedData
+      });
+    } catch (error2) {
+      console.error("[SyncManager] Failed to apply item change:", error2);
+    }
+  }
+  /**
+   * Get sync statistics
+   */
+  async getSyncStats() {
+    try {
+      const total = this.db.prepare("SELECT COUNT(*) as count FROM sync_logs").get();
+      const pending = this.db.prepare(
+        "SELECT COUNT(*) as count FROM sync_logs WHERE status = 'pending'"
+      ).get();
+      const processing = this.db.prepare(
+        "SELECT COUNT(*) as count FROM sync_logs WHERE status = 'processing'"
+      ).get();
+      const completed = this.db.prepare(
+        "SELECT COUNT(*) as count FROM sync_logs WHERE status = 'completed'"
+      ).get();
+      const failed = this.db.prepare(
+        "SELECT COUNT(*) as count FROM sync_logs WHERE status = 'failed'"
+      ).get();
+      const lastSync = this.db.prepare(
+        "SELECT MAX(completed_at) as last_sync FROM sync_logs WHERE status = 'completed'"
+      ).get();
+      const byEntity = this.db.prepare(
+        "SELECT entity_type, COUNT(*) as count FROM sync_logs GROUP BY entity_type"
+      ).all();
+      const byDirection = this.db.prepare(
+        "SELECT direction, COUNT(*) as count FROM sync_logs GROUP BY direction"
+      ).all();
+      return {
+        total: total.count,
+        totalSynced: completed.count,
+        pending: pending.count,
+        pendingCount: pending.count,
+        processing: processing.count,
+        completed: completed.count,
+        successCount: completed.count,
+        failed: failed.count,
+        failedCount: failed.count,
+        lastSyncAt: lastSync.last_sync,
+        byEntity: Object.fromEntries(
+          byEntity.map((e) => [e.entity_type, e.count])
+        ),
+        byDirection: Object.fromEntries(
+          byDirection.map((d) => [d.direction, d.count])
+        )
+      };
+    } catch (error2) {
+      console.error("[SyncManager] Failed to get stats:", error2);
+      return {
+        total: 0,
+        totalSynced: 0,
+        pending: 0,
+        pendingCount: 0,
+        processing: 0,
+        completed: 0,
+        successCount: 0,
+        failed: 0,
+        failedCount: 0,
+        lastSyncAt: null,
+        byEntity: {},
+        byDirection: {}
+      };
+    }
+  }
+  /**
+   * Get sync logs with filters
+   */
+  async getSyncLogs(filters) {
+    try {
+      const entityTypeFilter = (filters == null ? void 0 : filters.entityType) || (filters == null ? void 0 : filters.entity_type);
+      let countSql = "SELECT COUNT(*) as count FROM sync_logs WHERE 1=1";
+      let sql = "SELECT * FROM sync_logs WHERE 1=1";
+      const countParams = [];
+      const params = [];
+      if (entityTypeFilter) {
+        countSql += " AND entity_type = ?";
+        sql += " AND entity_type = ?";
+        countParams.push(entityTypeFilter);
+        params.push(entityTypeFilter);
+      }
+      if (filters == null ? void 0 : filters.status) {
+        countSql += " AND status = ?";
+        sql += " AND status = ?";
+        countParams.push(filters.status);
+        params.push(filters.status);
+      }
+      if (filters == null ? void 0 : filters.direction) {
+        countSql += " AND direction = ?";
+        sql += " AND direction = ?";
+        countParams.push(filters.direction);
+        params.push(filters.direction);
+      }
+      const countResult = this.db.prepare(countSql).get(...countParams);
+      sql += " ORDER BY created_at DESC";
+      if (filters == null ? void 0 : filters.limit) {
+        sql += " LIMIT ?";
+        params.push(filters.limit);
+      }
+      if (filters == null ? void 0 : filters.offset) {
+        sql += " OFFSET ?";
+        params.push(filters.offset);
+      }
+      const logs = this.db.prepare(sql).all(...params);
+      return { logs, total: countResult.count };
+    } catch (error2) {
+      console.error("[SyncManager] Failed to get logs:", error2);
+      return { logs: [], total: 0 };
+    }
+  }
+  /**
+   * Retry failed sync
+   */
+  async retrySyncLog(syncId) {
+    try {
+      const log = this.db.prepare("SELECT * FROM sync_logs WHERE sync_id = ?").get(syncId);
+      if (!log || log.status !== "failed") {
+        return false;
+      }
+      this.db.prepare(
+        "UPDATE sync_logs SET status = 'pending', retry_count = 0 WHERE sync_id = ?"
+      ).run(syncId);
+      if (log.payload) {
+        const payload = JSON.parse(log.payload);
+        this.syncQueue.push({
+          entityType: log.entity_type,
+          entityId: log.entity_id || void 0,
+          action: log.action,
+          data: payload,
+          retryCount: 0
+        });
+      }
+      if (!this.isProcessing) {
+        this.processQueue();
+      }
+      return true;
+    } catch (error2) {
+      console.error("[SyncManager] Failed to retry sync:", error2);
+      return false;
+    }
+  }
+  /**
+   * Retry all failed syncs
+   */
+  async retryAllFailed() {
+    try {
+      const failedLogs = this.db.prepare("SELECT * FROM sync_logs WHERE status = 'failed' LIMIT 100").all();
+      if (failedLogs.length === 0) {
+        return { success: true, message: "No failed syncs to retry" };
+      }
+      let retryCount = 0;
+      for (const log of failedLogs) {
+        const success = await this.retrySyncLog(log.sync_id);
+        if (success) retryCount++;
+      }
+      if (!this.isProcessing) {
+        await this.processQueue();
+      }
+      return {
+        success: true,
+        message: `Retried ${retryCount} of ${failedLogs.length} failed syncs`
+      };
+    } catch (error2) {
+      console.error("[SyncManager] Failed to retry all failed syncs:", error2);
+      return {
+        success: false,
+        message: error2 instanceof Error ? error2.message : "Retry failed"
+      };
+    }
+  }
+  /**
+   * Create sync log entry
+   */
+  async createSyncLog(log) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO sync_logs (sync_id, entity_type, entity_id, action, direction, status, payload, error_message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `);
+      stmt.run(
+        log.syncId,
+        log.entityType,
+        log.entityId || null,
+        log.action,
+        log.direction,
+        log.status,
+        log.payload ? JSON.stringify(log.payload) : null,
+        log.errorMessage || null
+      );
+    } catch (error2) {
+      console.error("[SyncManager] Failed to create sync log:", error2);
+    }
+  }
+  /**
+   * Update sync log status
+   */
+  async updateSyncLogStatus(syncId, status, errorMessage) {
+    try {
+      const stmt = this.db.prepare(`
+        UPDATE sync_logs 
+        SET status = ?, error_message = ?, completed_at = CASE WHEN ? = 'completed' THEN datetime('now') ELSE NULL END
+        WHERE sync_id = ?
+      `);
+      stmt.run(status, errorMessage || null, status, syncId);
+    } catch (error2) {
+      console.error("[SyncManager] Failed to update sync log:", error2);
+    }
+  }
+  /**
+   * Update sync log for retry
+   */
+  async updateSyncLogRetry(syncId, errorMessage) {
+    try {
+      const stmt = this.db.prepare(`
+        UPDATE sync_logs 
+        SET retry_count = retry_count + 1, error_message = ?, status = 'pending'
+        WHERE sync_id = ?
+      `);
+      stmt.run(errorMessage || null, syncId);
+    } catch (error2) {
+      console.error("[SyncManager] Failed to update retry count:", error2);
+    }
+  }
+  /**
+   * Get pending sync logs from database
+   */
+  async getPendingSyncLogs() {
+    try {
+      return this.db.prepare(
+        "SELECT * FROM sync_logs WHERE status = 'pending' AND direction = 'push' ORDER BY created_at ASC LIMIT 100"
+      ).all();
+    } catch (error2) {
+      return [];
+    }
+  }
+  /**
+   * Get last sync time for entity and direction
+   */
+  async getLastSyncTime(entityType, direction) {
+    try {
+      const result = this.db.prepare(
+        "SELECT MAX(completed_at) as last_sync FROM sync_logs WHERE entity_type = ? AND direction = ? AND status = 'completed'"
+      ).get(entityType, direction);
+      return result.last_sync;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Push initial data (data with synced_at NULL) to ERP Cloud
+   * Used for initial sync when ERP Cloud is empty
+   */
+  async pushInitialData(entityType) {
+    if (!this.syncService || !this.networkStatus.isOnline()) {
+      return {
+        success: false,
+        message: "Not connected or sync service not initialized",
+        count: 0
+      };
+    }
+    console.log(`[SyncManager] Pushing initial ${entityType} data...`);
+    try {
+      let count2 = 0;
+      switch (entityType) {
+        case "customer":
+          count2 = await this.pushInitialCustomers();
+          break;
+        case "item":
+        case "transaction_vehicle":
+          return {
+            success: false,
+            message: `Initial sync not supported for ${entityType} (master data not synced)`,
+            count: 0
+          };
+        default:
+          return {
+            success: false,
+            message: `Initial sync not supported for ${entityType}`,
+            count: 0
+          };
+      }
+      console.log(
+        `[SyncManager] Initial sync completed for ${entityType}: ${count2} records`
+      );
+      return {
+        success: true,
+        message: `Initial sync completed for ${entityType}: ${count2} records`,
+        count: count2
+      };
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : `Initial sync failed for ${entityType}`;
+      console.error(
+        `[SyncManager] Initial sync failed for ${entityType}:`,
+        message
+      );
+      return { success: false, message, count: 0 };
+    }
+  }
+  /**
+   * Push initial customers (synced_at IS NULL) to ERP Cloud
+   */
+  async pushInitialCustomers() {
+    try {
+      const customers = this.db.prepare(
+        "SELECT id, code, name, category, is_active FROM customers WHERE synced_at IS NULL"
+      ).all();
+      if (customers.length === 0) {
+        console.log("[SyncManager] No customers to sync (all synced)");
+        return 0;
+      }
+      console.log(`[SyncManager] Found ${customers.length} customers to sync`);
+      let successCount = 0;
+      const batchSize = 50;
+      for (let i = 0; i < customers.length; i += batchSize) {
+        const batch = customers.slice(i, i + batchSize);
+        const items2 = batch.map((customer) => ({
+          entityType: "customer",
+          action: "create",
+          data: {
+            // Don't send 'id' for create - ERP will generate its own ID
+            code: customer.code,
+            name: customer.name,
+            category: customer.category,
+            is_active: Boolean(customer.is_active)
+          }
+        }));
+        const response = await this.syncService.pushBatch(items2);
+        for (let j = 0; j < response.results.length; j++) {
+          const result = response.results[j];
+          const customer = batch[j];
+          if (result.success) {
+            this.db.prepare(
+              "UPDATE customers SET synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+            ).run(customer.id);
+            const syncId = result.syncId || SyncService.generateSyncId();
+            await this.createSyncLog({
+              syncId,
+              entityType: "customer",
+              entityId: customer.id,
+              action: "create",
+              direction: "push",
+              status: "completed",
+              payload: customer
+            });
+            successCount++;
+          } else {
+            const syncId = result.syncId || SyncService.generateSyncId();
+            await this.createSyncLog({
+              syncId,
+              entityType: "customer",
+              entityId: customer.id,
+              action: "create",
+              direction: "push",
+              status: "failed",
+              payload: customer,
+              errorMessage: result.message
+            });
+          }
+        }
+      }
+      console.log(
+        `[SyncManager] Initial customers sync: ${successCount}/${customers.length} successful`
+      );
+      return successCount;
+    } catch (error2) {
+      console.error("[SyncManager] Failed to push initial customers:", error2);
+      return 0;
+    }
+  }
+}
 const __dirname$1 = path$B.dirname(fileURLToPath$1(import.meta.url));
 process.env.APP_ROOT = path$B.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -44338,6 +45898,9 @@ const RENDERER_DIST = path$B.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$B.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
 let authManager;
+let settingsManager = null;
+let syncManager = null;
+let networkStatus = null;
 function createWindow() {
   win = new BrowserWindow({
     icon: path$B.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
@@ -44403,6 +45966,12 @@ async function initializeAuth() {
     }
     authManager = new AuthManager(db);
     console.log("Authentication system initialized");
+    settingsManager = new SettingsManager(db);
+    ERPClient.initializeSettings(db);
+    console.log("Settings manager initialized");
+    networkStatus = authManager.getNetworkStatus();
+    syncManager = new SyncManager(db, networkStatus);
+    console.log("Sync manager initialized");
   } catch (error2) {
     console.error("Failed to initialize authentication system:", error2);
     const isProduction = !VITE_DEV_SERVER_URL;
@@ -44415,6 +45984,32 @@ Please contact support if this problem persists.`
       );
     }
     console.log("Continuing without database in development mode...");
+  }
+}
+async function queueSyncOperation(entityType, action2, data2, entityId) {
+  if (!syncManager) {
+    console.log("[Sync] Sync manager not initialized, skipping sync queue");
+    return;
+  }
+  try {
+    const accessToken = await authManager.getAccessToken();
+    if (accessToken) {
+      syncManager.initialize(accessToken);
+    }
+    const syncId = await syncManager.queueSync(
+      entityType,
+      action2,
+      data2,
+      entityId
+    );
+    console.log(
+      `[Sync] Queued ${action2.toUpperCase()} for ${entityType}${entityId ? ` (ID: ${entityId})` : ""} | SyncID: ${syncId}`
+    );
+  } catch (error2) {
+    console.error(
+      `[Sync] Failed to queue ${action2} for ${entityType}:`,
+      error2 instanceof Error ? error2.message : error2
+    );
   }
 }
 function setupAuthHandlers() {
@@ -44809,6 +46404,20 @@ function setupAuthHandlers() {
       try {
         const customerManager = authManager.getCustomerManager();
         const customer = customerManager.create(customerData);
+        if (customer) {
+          await queueSyncOperation(
+            "customer",
+            "create",
+            {
+              id: customer.id,
+              code: customer.code,
+              name: customer.name,
+              category: customer.category,
+              is_active: customer.is_active !== void 0 ? customer.is_active : true
+            },
+            customer.id
+          );
+        }
         return { success: true, data: customer };
       } catch (error2) {
         return {
@@ -44827,6 +46436,18 @@ function setupAuthHandlers() {
         if (!customer) {
           return { success: false, error: "Customer not found" };
         }
+        await queueSyncOperation(
+          "customer",
+          "update",
+          {
+            id: customer.id,
+            code: customer.code,
+            name: customer.name,
+            category: customer.category,
+            is_active: customer.is_active !== void 0 ? customer.is_active : true
+          },
+          customerId
+        );
         return { success: true, data: customer };
       } catch (error2) {
         return {
@@ -44843,6 +46464,12 @@ function setupAuthHandlers() {
       if (!success) {
         return { success: false, error: "Failed to delete customer" };
       }
+      await queueSyncOperation(
+        "customer",
+        "delete",
+        { id: customerId },
+        customerId
+      );
       return { success: true };
     } catch (error2) {
       return {
@@ -45047,12 +46674,50 @@ function setupAuthHandlers() {
   ipcMain.handle(
     "transactions:create",
     async (_event, transactionData, userId) => {
+      var _a2, _b;
       try {
         const transactionManager = authManager.getTransactionManager();
         const transaction = transactionManager.createTransaction(
           transactionData,
           userId
         );
+        if (transaction) {
+          console.log(
+            `[Transaction Sync] Queuing sync for transaction ${transaction.id} with ${((_a2 = transaction.items) == null ? void 0 : _a2.length) || 0} items`
+          );
+          await queueSyncOperation(
+            "transaction",
+            "create",
+            {
+              id: transaction.id,
+              invoiceNumber: transaction.invoiceNumber,
+              transactionNumber: transaction.invoiceNumber,
+              // Use invoice as transaction number
+              transactionTypeId: transaction.transactionTypeId,
+              customerId: transaction.customerId,
+              vehicleId: transaction.vehicleId,
+              totalAmount: transaction.totalAmount,
+              paymentStatus: transaction.paymentStatus,
+              transactionStatus: transaction.transactionStatus,
+              createdBy: transaction.createdBy,
+              notes: transaction.notes || null,
+              // Include items for nested sync - ERP Cloud will handle items from this payload
+              items: (_b = transaction.items) == null ? void 0 : _b.map((item) => ({
+                id: item.id,
+                itemId: item.itemId,
+                itemName: item.itemName || "Unknown Item",
+                itemUnit: item.itemUnit || "unit",
+                itemPrice: item.price,
+                qty: item.qty,
+                subtotal: item.subtotal
+              }))
+            },
+            transaction.id
+          );
+          console.log(
+            `[Transaction Sync] Successfully queued sync for transaction ${transaction.id} (${transaction.invoiceNumber})`
+          );
+        }
         return { success: true, data: transaction };
       } catch (error2) {
         return {
@@ -45092,6 +46757,12 @@ function setupAuthHandlers() {
         if (!success) {
           return { success: false, error: "Failed to delete transaction" };
         }
+        await queueSyncOperation(
+          "transaction",
+          "delete",
+          { id: transactionId },
+          transactionId
+        );
         return { success: true };
       } catch (error2) {
         return {
@@ -45127,6 +46798,12 @@ function setupAuthHandlers() {
         if (!transaction) {
           return { success: false, error: "Transaction not found" };
         }
+        await queueSyncOperation(
+          "transaction",
+          "update",
+          { id: transactionId, status: newStatus },
+          transactionId
+        );
         return { success: true, data: transaction };
       } catch (error2) {
         return {
@@ -45164,6 +46841,12 @@ function setupAuthHandlers() {
         if (!payment) {
           return { success: false, error: "Transaction not found" };
         }
+        await queueSyncOperation(
+          "transaction_payment",
+          "create",
+          { ...payment, transaction_id: transactionId },
+          payment.id
+        );
         return { success: true, data: payment };
       } catch (error2) {
         return {
@@ -45416,6 +47099,9 @@ function setupAuthHandlers() {
       try {
         const loaderManager = authManager.getLoaderManager();
         const loader = loaderManager.create(data2);
+        if (loader) {
+          await queueSyncOperation("loader", "create", loader, loader.id);
+        }
         return { success: true, data: loader };
       } catch (error2) {
         return {
@@ -45434,6 +47120,7 @@ function setupAuthHandlers() {
         if (!loader) {
           return { success: false, error: "Loader not found" };
         }
+        await queueSyncOperation("loader", "update", loader, id2);
         return { success: true, data: loader };
       } catch (error2) {
         return {
@@ -45450,6 +47137,7 @@ function setupAuthHandlers() {
       if (!success) {
         return { success: false, error: "Failed to delete loader" };
       }
+      await queueSyncOperation("loader", "delete", { id: id2 }, id2);
       return { success: true };
     } catch (error2) {
       return {
@@ -45537,6 +47225,16 @@ function setupAuthHandlers() {
           notes,
           proofData
         );
+        await queueSyncOperation(
+          "payment_verification",
+          "update",
+          {
+            id: paymentId,
+            verification_status: "VERIFIED",
+            verified_by: user.id
+          },
+          paymentId
+        );
         return { success: true, data: payment };
       } catch (error2) {
         return {
@@ -45568,6 +47266,17 @@ function setupAuthHandlers() {
           reason,
           notes,
           proofData
+        );
+        await queueSyncOperation(
+          "payment_verification",
+          "update",
+          {
+            id: paymentId,
+            verification_status: "REJECTED",
+            verified_by: user.id,
+            rejection_reason: reason
+          },
+          paymentId
         );
         return { success: true, data: payment };
       } catch (error2) {
@@ -45799,6 +47508,390 @@ function setupAuthHandlers() {
       }
     }
   );
+  ipcMain.handle("settings:getAll", async () => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const settings2 = settingsManager.getAll();
+      return { success: true, data: settings2 };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get settings"
+      };
+    }
+  });
+  ipcMain.handle("settings:get", async (_event, key) => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const setting = settingsManager.getRaw(key);
+      return { success: true, data: setting };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get setting"
+      };
+    }
+  });
+  ipcMain.handle(
+    "settings:getValue",
+    async (_event, key, defaultValue) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const value = settingsManager.get(key, defaultValue);
+        return { success: true, data: value };
+      } catch (error2) {
+        return {
+          success: false,
+          error: error2 instanceof Error ? error2.message : "Failed to get setting value"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "settings:set",
+    async (_event, key, value, options) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const success = settingsManager.set(
+          key,
+          value,
+          options
+        );
+        if (key === "erp_api_url") {
+          ERPClient.resetInstance();
+        }
+        return { success };
+      } catch (error2) {
+        return {
+          success: false,
+          error: error2 instanceof Error ? error2.message : "Failed to set setting"
+        };
+      }
+    }
+  );
+  ipcMain.handle(
+    "settings:setMultiple",
+    async (_event, settings2) => {
+      try {
+        if (!settingsManager) {
+          return { success: false, error: "Settings manager not initialized" };
+        }
+        const success = settingsManager.setMultiple(
+          settings2
+        );
+        ERPClient.resetInstance();
+        return { success };
+      } catch (error2) {
+        return {
+          success: false,
+          error: error2 instanceof Error ? error2.message : "Failed to set settings"
+        };
+      }
+    }
+  );
+  ipcMain.handle("settings:getByCategory", async (_event, category) => {
+    try {
+      if (!settingsManager) {
+        return { success: false, error: "Settings manager not initialized" };
+      }
+      const settings2 = settingsManager.getByCategory(
+        category
+      );
+      return { success: true, data: settings2 };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get settings"
+      };
+    }
+  });
+  ipcMain.handle("settings:testConnection", async (_event, url2) => {
+    try {
+      const testUrl = url2 || (settingsManager == null ? void 0 : settingsManager.getErpApiUrl());
+      if (!testUrl) {
+        return { success: false, error: "No URL provided" };
+      }
+      const result = await ERPClient.testConnectionTo(testUrl);
+      return { success: true, data: result };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Connection test failed"
+      };
+    }
+  });
+  ipcMain.handle("sync:getStats", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const stats = await syncManager.getSyncStats();
+      return { success: true, data: stats };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get sync stats"
+      };
+    }
+  });
+  ipcMain.handle(
+    "sync:getLogs",
+    async (_event, filters) => {
+      try {
+        if (!syncManager) {
+          return { success: false, error: "Sync manager not initialized" };
+        }
+        const logs = await syncManager.getSyncLogs(filters);
+        return { success: true, data: logs };
+      } catch (error2) {
+        return {
+          success: false,
+          error: error2 instanceof Error ? error2.message : "Failed to get sync logs"
+        };
+      }
+    }
+  );
+  ipcMain.handle("sync:syncAll", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+      const result = await syncManager.syncAll();
+      return { success: result.success, message: result.message };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Sync failed"
+      };
+    }
+  });
+  ipcMain.handle("sync:retry", async (_event, syncId) => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const success = await syncManager.retrySyncLog(syncId);
+      return { success };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Retry failed"
+      };
+    }
+  });
+  ipcMain.handle("sync:startScheduler", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const accessToken = await authManager.getAccessToken();
+      if (accessToken) {
+        syncManager.initialize(accessToken);
+      }
+      syncManager.startScheduler();
+      return { success: true };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to start scheduler"
+      };
+    }
+  });
+  ipcMain.handle("sync:stopScheduler", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      syncManager.stopScheduler();
+      return { success: true };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to stop scheduler"
+      };
+    }
+  });
+  ipcMain.handle("sync:isOnline", async () => {
+    try {
+      if (!networkStatus) {
+        return { success: false, error: "Network status not initialized" };
+      }
+      const isOnline = networkStatus.getStatus();
+      return { success: true, data: isOnline };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get online status"
+      };
+    }
+  });
+  ipcMain.handle("sync:getNetworkStatus", async () => {
+    try {
+      if (!networkStatus) {
+        return { success: false, error: "Network status not initialized" };
+      }
+      const isOnline = networkStatus.getStatus();
+      return { success: true, data: { isOnline } };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Failed to get network status"
+      };
+    }
+  });
+  ipcMain.handle(
+    "sync:syncEntity",
+    async (_event, entityType, direction) => {
+      try {
+        if (!syncManager) {
+          return { success: false, error: "Sync manager not initialized" };
+        }
+        const session = await authManager.getCurrentUser();
+        if (session) {
+          const accessToken = await authManager.getAccessToken();
+          if (accessToken) {
+            syncManager.initialize(accessToken);
+          }
+        }
+        let result;
+        switch (entityType) {
+          case "customer":
+            result = await syncManager.syncCustomers(
+              direction
+            );
+            break;
+          case "item":
+            result = await syncManager.syncItems(
+              direction
+            );
+            break;
+          case "payment_verification":
+            result = await syncManager.syncPaymentVerifications(
+              direction
+            );
+            break;
+          default:
+            return {
+              success: false,
+              error: `Unknown entity type: ${entityType}`
+            };
+        }
+        return { success: result.success, message: result.message };
+      } catch (error2) {
+        return {
+          success: false,
+          error: error2 instanceof Error ? error2.message : "Sync entity failed"
+        };
+      }
+    }
+  );
+  ipcMain.handle("sync:retryFailed", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const accessToken = await authManager.getAccessToken();
+      if (accessToken) {
+        syncManager.initialize(accessToken);
+      }
+      const result = await syncManager.retryAllFailed();
+      return { success: result.success, message: result.message };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Retry failed syncs failed"
+      };
+    }
+  });
+  ipcMain.handle("sync:pushInitialData", async (_event, entityType) => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+      const result = await syncManager.pushInitialData(
+        entityType
+      );
+      return {
+        success: result.success,
+        message: result.message,
+        data: { count: result.count }
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Push initial data failed"
+      };
+    }
+  });
+  ipcMain.handle("sync:pushAllInitialData", async () => {
+    try {
+      if (!syncManager) {
+        return { success: false, error: "Sync manager not initialized" };
+      }
+      const session = await authManager.getCurrentUser();
+      if (session) {
+        const accessToken = await authManager.getAccessToken();
+        if (accessToken) {
+          syncManager.initialize(accessToken);
+        }
+      }
+      const results = [];
+      const entityTypes = [
+        "customer",
+        "item",
+        "transaction_vehicle"
+      ];
+      for (const entityType of entityTypes) {
+        const result = await syncManager.pushInitialData(entityType);
+        results.push({
+          entityType,
+          success: result.success,
+          message: result.message,
+          count: result.count
+        });
+      }
+      const totalSuccess = results.reduce(
+        (sum, r) => sum + (r.success ? r.count : 0),
+        0
+      );
+      const totalFailed = results.reduce(
+        (sum, r) => sum + (!r.success ? 1 : 0),
+        0
+      );
+      return {
+        success: totalFailed === 0,
+        message: `Initial sync completed: ${totalSuccess} records synced, ${totalFailed} failed`,
+        data: { results, totalSuccess, totalFailed }
+      };
+    } catch (error2) {
+      return {
+        success: false,
+        error: error2 instanceof Error ? error2.message : "Push all initial data failed"
+      };
+    }
+  });
 }
 app.whenReady().then(async () => {
   await initializeAuth();

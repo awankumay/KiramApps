@@ -126,6 +126,20 @@ export const ROUTES: Record<string, RouteConfig> = {
     icon: "Truck",
     showInNav: true,
   },
+  settings: {
+    path: "/superadmin/settings",
+    name: "Pengaturan",
+    permissions: [Permission.MANAGE_SETTINGS],
+    icon: "Settings",
+    showInNav: true,
+  },
+  sync: {
+    path: "/superadmin/sync",
+    name: "Sinkronisasi",
+    permissions: [Permission.MANAGE_SYNC],
+    icon: "RefreshCw",
+    showInNav: true,
+  },
 
   // Transaction routes (Checker + Superadmin)
   transactions: {
@@ -208,6 +222,8 @@ export const NAV_GROUPS: NavGroup[] = [
       "paymentMethods",
       "loaders",
       "reports",
+      "settings",
+      "sync",
     ],
   },
   {
