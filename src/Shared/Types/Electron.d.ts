@@ -1,3 +1,11 @@
+import type {
+  ReceiptData,
+  SuratKirimData,
+  PrintResult,
+  TemplateData,
+  TemplateType,
+} from "./PrintTemplate";
+
 export interface User {
   id: number;
   username: string;
@@ -673,8 +681,61 @@ declare global {
           }>
         >;
       };
+      printer: {
+        getPrinters: () => Promise<ApiResponse<Printer[]>>;
+        getPrinterConfig: () => Promise<ApiResponse<PrinterConfig>>;
+        savePrinterConfig: (
+          config: PrinterConfig
+        ) => Promise<ApiResponse<boolean>>;
+        printTest: (
+          config: PrinterConfig
+        ) => Promise<ApiResponse<PrintTestResult>>;
+        printReceipt: (
+          data: ReceiptData,
+          config?: PrinterConfig
+        ) => Promise<ApiResponse<PrintResult>>;
+        printSuratKirim: (
+          data: SuratKirimData,
+          config?: PrinterConfig
+        ) => Promise<ApiResponse<PrintResult>>;
+        previewTemplate: (
+          templateId: string,
+          data: TemplateData
+        ) => Promise<ApiResponse<string>>;
+        getTemplates: () => Promise<ApiResponse<TemplateInfo[]>>;
+      };
     };
   }
+}
+
+// Printer Types
+export interface Printer {
+  name: string;
+  description?: string;
+  status?: number;
+  isDefault?: boolean;
+  options?: {
+    [key: string]: string;
+  };
+}
+
+export interface PrinterConfig {
+  printerName: string;
+  usePdfMode: boolean;
+  lastUpdated?: number;
+}
+
+export interface PrintTestResult {
+  success: boolean;
+  error?: string;
+  pdfPath?: string;
+}
+
+export interface TemplateInfo {
+  id: TemplateType;
+  name: string;
+  description: string;
+  paperSize: "80mm" | "A4" | "A5";
 }
 
 // Settings Types

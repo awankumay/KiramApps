@@ -133,6 +133,13 @@ export const ROUTES: Record<string, RouteConfig> = {
     icon: "Settings",
     showInNav: true,
   },
+  printerSettings: {
+    path: "/superadmin/printer-settings",
+    name: "Pengaturan Printer",
+    permissions: [Permission.MANAGE_SETTINGS],
+    icon: "Printer",
+    showInNav: true,
+  },
   sync: {
     path: "/superadmin/sync",
     name: "Sinkronisasi",
@@ -223,6 +230,7 @@ export const NAV_GROUPS: NavGroup[] = [
       "loaders",
       "reports",
       "settings",
+      "printerSettings",
       "sync",
     ],
   },

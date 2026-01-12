@@ -41,6 +41,7 @@ import {
 import { TransactionStatusBadge } from "./Components/TransactionStatusBadge";
 import { PaymentDialog } from "./Components/PaymentDialog";
 import { StatusUpdateDialog } from "./Components/StatusUpdateDialog";
+import { TemplatePreviewer } from "@/Shared/Components/TemplatePreviewer";
 import { usePermission } from "@/Features/Auth/Hooks/UsePermission";
 import type {
   TransactionData,
@@ -49,6 +50,7 @@ import type {
   PaymentMethodData,
   TransactionStatus,
 } from "@/Shared/Types/Electron";
+import type { ReceiptData, TemplateData } from "@/Shared/Types/PrintTemplate";
 import { toast } from "sonner";
 
 const STATUS_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
@@ -81,6 +83,8 @@ export function TransactionDetailPage() {
   );
   const [paymentDetailOpen, setPaymentDetailOpen] = useState(false);
   const [proofImageData, setProofImageData] = useState<string | null>(null);
+  const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   const fetchTransaction = useCallback(async () => {
     if (!id) return;
@@ -217,6 +221,75 @@ export function TransactionDetailPage() {
     }
   };
 
+  const handlePrintReceipt = () => {
+    if (!transaction) return;
+
+    // Map transaction data to ReceiptData format
+    const receipt: ReceiptData = {
+      // Transaction Info
+      transactionNumber: transaction.invoiceNumber,
+      date: new Date(transaction.createdAt).toLocaleDateString("id-ID"),
+      time: new Date(transaction.createdAt).toLocaleTimeString("id-ID"),
+
+      // Store Info
+      storeName: "CV. KIRAMANA",
+      storeAddress: "Jl. Raya Material No. 123, Kota",
+      storePhone: "(021) 1234-5678",
+
+      // Customer Info
+      customerName: transaction.customerName,
+      vehiclePlate: transaction.vehiclePlate,
+
+      // Items
+      items:
+        transaction.items?.map((item) => ({
+          name: item.itemName || "",
+          quantity: item.qty,
+          unitPrice: item.price,
+          subtotal: item.qty * item.price,
+        })) || [],
+
+      // Payment Summary
+      subtotal: transaction.totalAmount,
+      total: transaction.totalAmount,
+      paymentMethod:
+        payments.length > 0
+          ? payments[0].paymentMethodName || ""
+          : "Belum Dibayar",
+      amountPaid: totalPaid,
+      change: totalPaid - transaction.totalAmount,
+
+      // Footer
+      cashierName: transaction.createdByName || "",
+      notes: transaction.notes || "",
+    };
+
+    setReceiptData(receipt);
+    setShowReceiptPreview(true);
+  };
+
+  const handlePrintConfirmed = async () => {
+    if (!receiptData) return;
+
+    try {
+      const response = await window.api.printer.printReceipt(receiptData);
+
+      if (response.success && response.data) {
+        if (response.data.success) {
+          toast.success("Receipt berhasil dicetak");
+          setShowReceiptPreview(false);
+        } else {
+          toast.error(response.data.message || "Gagal mencetak receipt");
+        }
+      } else {
+        toast.error(response.error || "Gagal mencetak receipt");
+      }
+    } catch (error) {
+      console.error("Print error:", error);
+      toast.error("Terjadi kesalahan saat mencetak");
+    }
+  };
+
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingAmount = transaction ? transaction.totalAmount - totalPaid : 0;
 
@@ -310,9 +383,9 @@ export function TransactionDetailPage() {
               Hapus
             </Button>
           )}
-          <Button variant="outline">
+          <Button variant="outline" onClick={handlePrintReceipt}>
             <Printer className="h-4 w-4 mr-2" />
-            Cetak
+            Cetak Receipt
           </Button>
         </div>
       </div>
@@ -747,6 +820,16 @@ export function TransactionDetailPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Receipt Preview Dialog */}
+      {showReceiptPreview && receiptData && (
+        <TemplatePreviewer
+          templateId="receipt"
+          data={receiptData as unknown as TemplateData}
+          onClose={() => setShowReceiptPreview(false)}
+          onPrint={handlePrintConfirmed}
+        />
+      )}
     </div>
   );
 }

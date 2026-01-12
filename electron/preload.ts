@@ -364,4 +364,37 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("sync:pushInitialData", entityType),
     pushAllInitialData: () => ipcRenderer.invoke("sync:pushAllInitialData"),
   },
+  printer: {
+    getPrinters: () => ipcRenderer.invoke("printer:getPrinters"),
+    getPrinterConfig: () => ipcRenderer.invoke("printer:getPrinterConfig"),
+    savePrinterConfig: (config: {
+      printerName: string;
+      usePdfMode: boolean;
+      lastUpdated?: number;
+    }) => ipcRenderer.invoke("printer:savePrinterConfig", config),
+    printTest: (config: {
+      printerName: string;
+      usePdfMode: boolean;
+      lastUpdated?: number;
+    }) => ipcRenderer.invoke("printer:printTest", config),
+    printReceipt: (
+      data: unknown,
+      config?: {
+        printerName: string;
+        usePdfMode: boolean;
+        lastUpdated?: number;
+      }
+    ) => ipcRenderer.invoke("printer:printReceipt", data, config),
+    printSuratKirim: (
+      data: unknown,
+      config?: {
+        printerName: string;
+        usePdfMode: boolean;
+        lastUpdated?: number;
+      }
+    ) => ipcRenderer.invoke("printer:printSuratKirim", data, config),
+    previewTemplate: (templateId: string, data: unknown) =>
+      ipcRenderer.invoke("printer:previewTemplate", templateId, data),
+    getTemplates: () => ipcRenderer.invoke("printer:getTemplates"),
+  },
 });

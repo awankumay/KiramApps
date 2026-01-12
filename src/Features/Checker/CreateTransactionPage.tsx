@@ -234,6 +234,82 @@ export function CreateTransactionPage() {
         toast.success("Transaksi Berhasil", {
           description: `Transaksi dengan invoice ${result.data.invoiceNumber} telah dibuat`,
         });
+
+        // Prepare receipt data for direct printing
+        const receiptData = {
+          // Transaction Info
+          transactionNumber: result.data.invoiceNumber,
+          date: new Date().toLocaleDateString("id-ID"),
+          time: new Date().toLocaleTimeString("id-ID"),
+
+          // Store Info
+          storeName: "CV. KIRAMANA",
+          storeAddress: "Jl. Raya Material No. 123, Kota",
+          storePhone: "(021) 1234-5678",
+
+          // Customer Info
+          customerName: result.data.customerName || "",
+          vehiclePlate: result.data.vehiclePlate || "",
+
+          // Items
+          items: items
+            .filter((item) => item.itemId)
+            .map((item) => ({
+              name: item.itemName,
+              quantity: item.quantity,
+              unitPrice: item.price,
+              subtotal: item.subtotal,
+            })),
+
+          // Payment Summary
+          subtotal: total,
+          total: total,
+          paymentMethod:
+            paymentMethods.find((pm) => pm.id === paymentMethodId)?.name ||
+            "CASH",
+          amountPaid: paymentMethodId === 1 ? total : 0, // CASH auto-paid
+          change: paymentMethodId === 1 ? 0 : 0,
+
+          // Footer
+          cashierName: "Kasir", // TODO: Get from auth context
+          notes: notes || undefined,
+        };
+
+        console.log("Receipt data prepared:", receiptData);
+
+        // Direct print without preview
+        try {
+          console.log("Calling printer API...");
+          const printResponse = await window.api.printer.printReceipt(
+            receiptData
+          );
+
+          console.log("Print response:", printResponse);
+
+          if (printResponse.success && printResponse.data) {
+            if (printResponse.data.success) {
+              toast.success("Receipt berhasil dicetak");
+            } else {
+              toast.warning(
+                printResponse.data.message || "Gagal mencetak receipt",
+                {
+                  description: "Transaksi tersimpan, tapi gagal print",
+                }
+              );
+            }
+          } else {
+            toast.warning(printResponse.error || "Gagal mencetak receipt", {
+              description: "Transaksi tersimpan, tapi gagal print",
+            });
+          }
+        } catch (printError) {
+          console.error("Print error:", printError);
+          toast.warning("Gagal mencetak receipt", {
+            description: "Transaksi tersimpan, tapi gagal print",
+          });
+        }
+
+        // Reset form after everything is done
         resetForm();
       } else {
         toast.error("Gagal membuat transaksi", {

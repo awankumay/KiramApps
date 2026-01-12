@@ -10,6 +10,7 @@ import {
   Camera,
   Scale,
   AlertCircle,
+  Printer,
 } from "lucide-react";
 import { Button } from "@Shared/Components/UI/Button";
 import { Badge } from "@Shared/Components/UI/Badge";
@@ -31,6 +32,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@Shared/Components/UI/Dialog";
+import { TemplatePreviewer } from "@/Shared/Components/TemplatePreviewer";
+import type {
+  SuratKirimData,
+  TemplateData,
+} from "@/Shared/Types/PrintTemplate";
+import { toast } from "sonner";
 
 // Mock data untuk task muat material
 const mockLoadingTask = {
@@ -87,6 +94,10 @@ export function LoaderDetailPage() {
   const [completionNotes, setCompletionNotes] = useState("");
   const [actualQuantity, setActualQuantity] = useState("");
   const [hasPhoto, setHasPhoto] = useState(false);
+  const [showSuratKirimPreview, setShowSuratKirimPreview] = useState(false);
+  const [suratKirimData, setSuratKirimData] = useState<SuratKirimData | null>(
+    null
+  );
   const task = mockLoadingTask;
   const status = statusConfig[task.status as LoadingStatus];
 
@@ -109,6 +120,55 @@ export function LoaderDetailPage() {
     const qty = actualQuantity || "-";
     alert(`Muat selesai. Catatan: ${notes}, Jumlah Aktual: ${qty} (mock)`);
     setShowCompleteDialog(false);
+  };
+
+  const handlePrintSuratKirim = () => {
+    // Map loader task data to SuratKirimData format
+    const suratKirim: SuratKirimData = {
+      // Header
+      companyName: "CV. KIRAMANA",
+
+      // Truck & Destination
+      truckName: task.truck.plate,
+      destination: task.customer.name,
+
+      // Materials
+      materials: [
+        {
+          no: 1,
+          jenisMaterial: task.material.type,
+          jumlah: `${task.material.quantity} ${task.material.unit}`,
+          keterangan: task.transactionId,
+        },
+      ],
+
+      // Footer
+      date: new Date().toLocaleDateString("id-ID"),
+      driverName: task.truck.driver,
+      supervisorName: "Supervisor", // In real app, get from auth context
+    };
+
+    setSuratKirimData(suratKirim);
+    setShowSuratKirimPreview(true);
+  };
+
+  const handlePrintConfirmed = async () => {
+    if (!suratKirimData) return;
+
+    try {
+      const result = await window.api.printer.printSuratKirim(suratKirimData);
+
+      if (result.success) {
+        toast.success("Surat Kirim berhasil dicetak");
+        setShowSuratKirimPreview(false);
+        // In real app, save print timestamp to database
+      } else {
+        toast.error(result.error || "Gagal mencetak Surat Kirim");
+      }
+    } catch (error) {
+      console.error("Print error:", error);
+      toast.error("Terjadi kesalahan saat mencetak");
+    }
   };
 
   const totalPrice = task.material.quantity * task.material.pricePerUnit;
@@ -289,6 +349,18 @@ export function LoaderDetailPage() {
                   <p>Muat material telah selesai</p>
                 </div>
               )}
+
+              {/* Print Surat Kirim - Available for all statuses */}
+              <div className="pt-2 border-t">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handlePrintSuratKirim}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Cetak Surat Kirim
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -412,6 +484,16 @@ export function LoaderDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Surat Kirim Preview Dialog */}
+      {showSuratKirimPreview && suratKirimData && (
+        <TemplatePreviewer
+          templateId="surat-kirim"
+          data={suratKirimData as unknown as TemplateData}
+          onClose={() => setShowSuratKirimPreview(false)}
+          onPrint={handlePrintConfirmed}
+        />
+      )}
     </div>
   );
 }

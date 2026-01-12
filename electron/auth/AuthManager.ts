@@ -145,6 +145,12 @@ export class AuthManager {
 
       if (isOnline) {
         try {
+          console.log(
+            "[AuthManager] Attempting API login to:",
+            this.apiClient.getBaseUrl()
+          );
+          console.log("[AuthManager] Username:", username);
+
           const response = await this.apiClient.login(username, password);
 
           // Store session
@@ -189,7 +195,16 @@ export class AuthManager {
           };
         } catch (apiError) {
           // API login failed, try local authentication
-          console.log("API login failed, trying local authentication");
+          console.log(
+            "[AuthManager] API login failed, trying local authentication"
+          );
+          console.error("[AuthManager] API Error Details:", {
+            name: apiError instanceof Error ? apiError.name : "Unknown",
+            message:
+              apiError instanceof Error ? apiError.message : "Unknown error",
+            stack: apiError instanceof Error ? apiError.stack : undefined,
+            error: apiError,
+          });
           return this.loginLocal(username, password);
         }
       } else {

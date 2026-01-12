@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { SettingsManager, DEFAULT_ERP_API_URL } from "./SettingsManager";
 
 /**
  * NetworkStatus monitors network connectivity
@@ -7,11 +8,36 @@ import { EventEmitter } from "events";
 export class NetworkStatus extends EventEmitter {
   private _isOnline: boolean = true;
   private checkInterval: NodeJS.Timeout | null = null;
-  private readonly pingUrl = "http://localhost:8000/api/v1/healthz";
+  private settingsManager: SettingsManager | null = null;
+  private pingUrl: string;
 
-  constructor() {
+  constructor(settingsManager?: SettingsManager) {
     super();
+    this.settingsManager = settingsManager || null;
+    this.pingUrl = this.getPingUrl();
     this.startMonitoring();
+  }
+
+  /**
+   * Get ping URL from settings or use default
+   */
+  private getPingUrl(): string {
+    if (this.settingsManager) {
+      const baseUrl = this.settingsManager.getErpApiUrl();
+      // Use v1/healthz endpoint if available, otherwise use base URL
+      return `${baseUrl}/v1/healthz`;
+    }
+    // Fallback to default
+    return `${DEFAULT_ERP_API_URL}/v1/healthz`;
+  }
+
+  /**
+   * Update ping URL when settings change
+   */
+  updatePingUrl(settingsManager: SettingsManager): void {
+    this.settingsManager = settingsManager;
+    this.pingUrl = this.getPingUrl();
+    console.log(`[NetworkStatus] Updated ping URL to: ${this.pingUrl}`);
   }
 
   /**

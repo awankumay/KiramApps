@@ -25,6 +25,7 @@ import { TransactionTypesListPage } from "@Features/Transaction/TransactionTypes
 import { PaymentMethodsListPage } from "@Features/Payment/PaymentMethodsListPage";
 import { LoadersListPage } from "@Features/Loader/LoadersListPage";
 import { SettingsPage } from "@Features/Settings/Components/SettingsPage";
+import { PrinterSettingsPage } from "@Features/Settings/Components/PrinterSettingsPage";
 import { SyncDashboardPage } from "@Features/Sync/Components/SyncDashboardPage";
 
 /**
@@ -241,6 +242,16 @@ function AppContent() {
           element={
             <ProtectedRoute permissions={[Permission.MANAGE_SETTINGS]}>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Printer Settings Route */}
+        <Route
+          path="/superadmin/printer-settings"
+          element={
+            <ProtectedRoute permissions={[Permission.MANAGE_SETTINGS]}>
+              <PrinterSettingsPage />
             </ProtectedRoute>
           }
         />

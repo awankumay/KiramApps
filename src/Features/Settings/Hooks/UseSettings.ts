@@ -6,6 +6,11 @@ import type {
 } from "../Types/Settings";
 
 /**
+ * Default ERP API URL (fallback)
+ */
+const DEFAULT_ERP_API_URL = "http://localhost:8000/api";
+
+/**
  * Hook for managing application settings
  */
 export function useSettings() {
@@ -79,7 +84,7 @@ export function useSettings() {
    */
   const getFormValues = useCallback((): SettingsFormValues => {
     return {
-      erp_api_url: getSettingValue("erp_api_url", "http://localhost:8000/api"),
+      erp_api_url: getSettingValue("erp_api_url", DEFAULT_ERP_API_URL),
       sync_enabled: getSettingValue("sync_enabled", true),
       sync_interval_minutes: getSettingValue("sync_interval_minutes", 10),
       sync_on_startup: getSettingValue("sync_on_startup", true),

@@ -11,6 +11,7 @@ import { SettingsManager } from "./auth/SettingsManager";
 import { SyncManager } from "./auth/SyncManager";
 import { ERPClient } from "./auth/ERPClient";
 import { NetworkStatus } from "./auth/NetworkStatus";
+import { PrinterManager } from "./auth/PrinterManager";
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +41,7 @@ let authManager: AuthManager;
 let settingsManager: SettingsManager | null = null;
 let syncManager: SyncManager | null = null;
 let networkStatus: NetworkStatus | null = null;
+let printerManager: PrinterManager | null = null;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -84,6 +86,10 @@ function createWindow() {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
+
+  // Initialize printer manager after window is created
+  printerManager = new PrinterManager(win);
+  console.log("Printer manager initialized");
 }
 
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -126,16 +132,27 @@ async function initializeAuth() {
       console.log("Run 'npm run db:migrate' manually if needed");
     }
 
-    authManager = new AuthManager(db);
-    console.log("Authentication system initialized");
-
-    // Initialize settings manager
+    // Initialize settings manager FIRST (before AuthManager)
+    // This ensures ERPClient can load the correct API URL from database
     settingsManager = new SettingsManager(db);
     ERPClient.initializeSettings(db);
     console.log("Settings manager initialized");
 
-    // Initialize network status and sync manager
+    // Log the configured ERP API URL
+    const configuredUrl = settingsManager.getErpApiUrl();
+    console.log(`Configured ERP API URL: ${configuredUrl}`);
+
+    // Now initialize AuthManager (which will use the configured URL)
+    authManager = new AuthManager(db);
+    console.log("Authentication system initialized");
+
+    // Initialize network status with settings manager
     networkStatus = authManager.getNetworkStatus();
+    if (networkStatus && settingsManager) {
+      networkStatus.updatePingUrl(settingsManager);
+    }
+
+    // Initialize sync manager
     syncManager = new SyncManager(db, networkStatus);
     console.log("Sync manager initialized");
   } catch (error) {
@@ -2866,8 +2883,174 @@ function setupAuthHandlers() {
   });
 }
 
+// ============================================================================
+// PRINTER IPC HANDLERS
+// ============================================================================
+function setupPrinterHandlers() {
+  // Get all printers installed on the system
+  ipcMain.handle("printer:getPrinters", async () => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const printers = await printerManager.getPrinters();
+      return { success: true, data: printers };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get printers",
+      };
+    }
+  });
+
+  // Get current printer configuration
+  ipcMain.handle("printer:getPrinterConfig", async () => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const config = printerManager.getPrinterConfig();
+      return { success: true, data: config };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get printer config",
+      };
+    }
+  });
+
+  // Save printer configuration
+  ipcMain.handle("printer:savePrinterConfig", async (_event, config) => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const success = printerManager.savePrinterConfig(config);
+      return { success: true, data: success };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to save printer config",
+      };
+    }
+  });
+
+  // Print test receipt
+  ipcMain.handle("printer:printTest", async (_event, config) => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      // Get current user info for receipt
+      const session = await authManager.getCurrentUser();
+      const userName = session
+        ? `${session.firstName} ${session.lastName}`
+        : undefined;
+
+      const result = await printerManager.printTest(config, userName);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to print test",
+      };
+    }
+  });
+
+  // Print receipt
+  ipcMain.handle("printer:printReceipt", async (_event, data, config) => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const result = await printerManager.printReceipt(data, config);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to print receipt",
+      };
+    }
+  });
+
+  // Print surat kirim
+  ipcMain.handle("printer:printSuratKirim", async (_event, data, config) => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const result = await printerManager.printSuratKirim(data, config);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to print surat kirim",
+      };
+    }
+  });
+
+  // Preview template
+  ipcMain.handle(
+    "printer:previewTemplate",
+    async (_event, templateId, data) => {
+      try {
+        if (!printerManager) {
+          return { success: false, error: "Printer manager not initialized" };
+        }
+
+        const html = printerManager.previewTemplate(templateId, data);
+        return { success: true, data: html };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to preview template",
+        };
+      }
+    }
+  );
+
+  // Get available templates
+  ipcMain.handle("printer:getTemplates", async () => {
+    try {
+      if (!printerManager) {
+        return { success: false, error: "Printer manager not initialized" };
+      }
+
+      const templates = printerManager.getTemplates();
+      return { success: true, data: templates };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get templates",
+      };
+    }
+  });
+}
+
 app.whenReady().then(async () => {
   await initializeAuth();
   setupAuthHandlers();
+  setupPrinterHandlers();
   createWindow();
 });

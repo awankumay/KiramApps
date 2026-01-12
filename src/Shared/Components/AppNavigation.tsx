@@ -9,6 +9,7 @@ import {
   Truck,
   BarChart3,
   Package,
+  Printer,
   LogOut,
   ChevronDown,
   Menu,
@@ -44,6 +45,7 @@ const iconMap: Record<string, typeof LayoutDashboard> = {
   Truck,
   BarChart3,
   Package,
+  Printer,
 };
 
 export function AppNavigation() {

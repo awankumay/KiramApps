@@ -45,7 +45,7 @@ module.exports.up = async function ({ db }: any) {
 /**
  * @param {{ db: import('better-sqlite3').Database }} context
  */
-module.exports.down = async function ({ db: _db }: any) {
+module.exports.down = async function () {
   // SQLite doesn't support DROP COLUMN directly in older versions
   // We'll leave the columns as they don't affect functionality
   console.log(

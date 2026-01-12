@@ -129,6 +129,12 @@ export class ERPClient {
    */
   async login(username: string, password: string): Promise<LoginResponse> {
     try {
+      console.log(
+        "[ERPClient] Attempting login to:",
+        `${this.baseUrl}/auth/login`
+      );
+      console.log("[ERPClient] Request body:", { username, expiresInMins: 60 });
+
       const response = await this.fetchWithTimeout(
         `${this.baseUrl}/auth/login`,
         {
@@ -145,8 +151,19 @@ export class ERPClient {
         }
       );
 
+      console.log(
+        "[ERPClient] Response status:",
+        response.status,
+        response.statusText
+      );
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error("[ERPClient] Authentication failed:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+        });
         throw new AuthenticationError(
           errorData.message || "Authentication failed",
           response.status
@@ -154,8 +171,20 @@ export class ERPClient {
       }
 
       const data = await response.json();
+      console.log("[ERPClient] Login successful, received data:", {
+        id: data.id,
+        username: data.username,
+        email: data.email,
+      });
       return data;
     } catch (error) {
+      console.error("[ERPClient] Login error:", {
+        name: error instanceof Error ? error.name : "Unknown",
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error,
+      });
+
       if (error instanceof AuthenticationError) {
         throw error;
       }
@@ -250,6 +279,12 @@ export class ERPClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
+      console.log(
+        "[ERPClient] Fetching:",
+        url,
+        "with timeout:",
+        this.timeout + "ms"
+      );
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
@@ -259,8 +294,20 @@ export class ERPClient {
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === "AbortError") {
+        console.error("[ERPClient] Request timeout after", this.timeout + "ms");
         throw new NetworkError("Request timeout");
       }
+
+      // Log detailed error for SSL and network issues
+      if (error instanceof Error) {
+        console.error("[ERPClient] Fetch error:", {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          url: url,
+        });
+      }
+
       throw error;
     }
   }
