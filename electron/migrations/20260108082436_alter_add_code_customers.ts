@@ -28,11 +28,20 @@ module.exports.up = async function ({ db }: any) {
     SELECT id, name, category, is_active, created_at FROM customers
   `);
 
+  // Disable foreign keys temporarily to allow dropping customers table
+  const previousFkStatus = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+
   // Drop old table
   db.exec(`DROP TABLE customers`);
 
   // Rename new table
   db.exec(`ALTER TABLE customers_new RENAME TO customers`);
+
+  // Restore foreign keys status
+  if (previousFkStatus) {
+    db.pragma("foreign_keys = ON");
+  }
 
   // Recreate indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)`);
@@ -67,8 +76,17 @@ module.exports.down = async function ({ db }: any) {
     SELECT id, name, category, is_active, created_at FROM customers
   `);
 
+  // Disable foreign keys temporarily to allow dropping customers table
+  const previousFkStatus = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+
   db.exec(`DROP TABLE customers`);
   db.exec(`ALTER TABLE customers_backup RENAME TO customers`);
+
+  // Restore foreign keys status
+  if (previousFkStatus) {
+    db.pragma("foreign_keys = ON");
+  }
 
   // Recreate indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)`);

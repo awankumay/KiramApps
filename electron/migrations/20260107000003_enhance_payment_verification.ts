@@ -77,6 +77,7 @@ module.exports.down = async function ({ db }: any) {
 
   // Remove columns (SQLite doesn't support ALTER TABLE DROP COLUMN directly)
   // We need to recreate the table without the new columns
+
   db.exec(`
     CREATE TABLE payments_backup (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,11 +107,20 @@ module.exports.down = async function ({ db }: any) {
     FROM payments
   `);
 
+  // Disable foreign keys temporarily to allow dropping payments table
+  const previousFkStatus = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+
   // Drop original table
   db.exec(`DROP TABLE payments`);
 
   // Rename backup to payments
   db.exec(`ALTER TABLE payments_backup RENAME TO payments`);
+
+  // Restore foreign keys status
+  if (previousFkStatus) {
+    db.pragma("foreign_keys = ON");
+  }
 
   // Recreate original indexes
   db.exec(

@@ -104,11 +104,20 @@ module.exports.down = async function ({ db }: any) {
     FROM payments
   `);
 
+  // Disable foreign keys temporarily to allow dropping payments table
+  const previousFkStatus = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+
   // Drop original table
   db.exec(`DROP TABLE payments`);
 
   // Rename backup to payments
   db.exec(`ALTER TABLE payments_backup RENAME TO payments`);
+
+  // Restore foreign keys status
+  if (previousFkStatus) {
+    db.pragma("foreign_keys = ON");
+  }
 
   // Recreate indexes
   db.exec(

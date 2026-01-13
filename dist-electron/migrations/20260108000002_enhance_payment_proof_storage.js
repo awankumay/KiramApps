@@ -95,10 +95,17 @@ module.exports.down = async function ({ db }) {
       rejection_reason, proof_image_path, created_at
     FROM payments
   `);
+    // Disable foreign keys temporarily to allow dropping payments table
+    const previousFkStatus = db.pragma("foreign_keys", { simple: true });
+    db.pragma("foreign_keys = OFF");
     // Drop original table
     db.exec(`DROP TABLE payments`);
     // Rename backup to payments
     db.exec(`ALTER TABLE payments_backup RENAME TO payments`);
+    // Restore foreign keys status
+    if (previousFkStatus) {
+        db.pragma("foreign_keys = ON");
+    }
     // Recreate indexes
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_payment_method_id ON payments(payment_method_id)`);
