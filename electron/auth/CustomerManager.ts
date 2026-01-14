@@ -271,4 +271,24 @@ export class CustomerManager {
       };
     });
   }
+
+  /**
+   * Get active customer count
+   */
+  getActiveCount(): number {
+    const result = this.db
+      .prepare("SELECT COUNT(*) as count FROM customers WHERE is_active = 1")
+      .get() as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Get inactive customer count
+   */
+  getInactiveCount(): number {
+    const result = this.db
+      .prepare("SELECT COUNT(*) as count FROM customers WHERE is_active = 0")
+      .get() as { count: number };
+    return result.count;
+  }
 }

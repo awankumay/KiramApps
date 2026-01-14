@@ -357,27 +357,72 @@ export class SyncManager {
       // Pull changes from ERP (unless only push requested)
       if (direction !== "push") {
         const lastSync = await this.getLastSyncTime("customer", "pull");
-        const pullResult = await this.syncService.pull("customer", {
-          since: lastSync || undefined,
-        });
+        console.log(
+          `[SyncManager] Last sync time for customers (pull): ${
+            lastSync || "NULL (first sync)"
+          }`
+        );
 
-        if (pullResult.success && pullResult.data.length > 0) {
-          // Apply pulled changes to local database
-          for (const customer of pullResult.data) {
-            await this.applyCustomerChange(
-              customer as {
-                id: number;
-                code?: string;
-                name?: string;
-                category?: string;
-                is_active?: boolean;
-              }
+        let totalPulled = 0;
+        let currentPage = 1;
+        let hasMorePages = true;
+
+        // Loop through all pages to get all customers
+        while (hasMorePages) {
+          const pullResult = await this.syncService.pull("customer", {
+            since: lastSync || undefined,
+            page: currentPage,
+            perPage: 100, // Increase perPage to reduce number of requests
+          });
+
+          console.log(
+            `[SyncManager] Pull result page ${currentPage} - Success: ${pullResult.success}, Data count: ${pullResult.data.length}`
+          );
+          if (pullResult.pagination) {
+            console.log(
+              `[SyncManager] Pagination info - Current: ${pullResult.pagination.currentPage}, Last: ${pullResult.pagination.lastPage}, PerPage: ${pullResult.pagination.perPage}, Total: ${pullResult.pagination.total}`
             );
           }
-          console.log(
-            `[SyncManager] Pulled ${pullResult.data.length} customer changes`
-          );
+
+          if (pullResult.success && pullResult.data.length > 0) {
+            // Apply pulled changes to local database
+            for (const customer of pullResult.data) {
+              await this.applyCustomerChange(
+                customer as {
+                  id: number;
+                  code?: string;
+                  name?: string;
+                  category?: string;
+                  is_active?: boolean;
+                }
+              );
+            }
+            totalPulled += pullResult.data.length;
+            console.log(
+              `[SyncManager] Pulled ${pullResult.data.length} customer changes from page ${currentPage}`
+            );
+
+            // Check if there are more pages
+            if (
+              pullResult.pagination &&
+              currentPage < pullResult.pagination.lastPage
+            ) {
+              currentPage++;
+            } else {
+              hasMorePages = false;
+            }
+          } else if (pullResult.success && pullResult.data.length === 0) {
+            console.log(
+              `[SyncManager] No customer changes on page ${currentPage}`
+            );
+            hasMorePages = false;
+          } else {
+            console.log("[SyncManager] Pull failed or returned no data");
+            hasMorePages = false;
+          }
         }
+
+        console.log(`[SyncManager] Total customers pulled: ${totalPulled}`);
       }
 
       // Push pending local changes (unless only pull requested)

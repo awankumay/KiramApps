@@ -434,6 +434,8 @@ declare global {
         delete: (customerId: number) => Promise<ApiResponse<void>>;
         search: (query: string) => Promise<ApiResponse<CustomerData[]>>;
         getActive: () => Promise<ApiResponse<CustomerData[]>>;
+        getActiveCount: () => Promise<ApiResponse<number>>;
+        getInactiveCount: () => Promise<ApiResponse<number>>;
       };
       vehicles: {
         getAll: (filters?: {

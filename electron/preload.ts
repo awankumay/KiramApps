@@ -123,6 +123,8 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("customers:delete", customerId),
     search: (query: string) => ipcRenderer.invoke("customers:search", query),
     getActive: () => ipcRenderer.invoke("customers:getActive"),
+    getActiveCount: () => ipcRenderer.invoke("customers:getActiveCount"),
+    getInactiveCount: () => ipcRenderer.invoke("customers:getInactiveCount"),
   },
   vehicles: {
     getAll: (filters?: {

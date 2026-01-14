@@ -34,14 +34,14 @@ if (files.length === 0) {
 }
 
 console.log(
-  `✓ Found ${files.length} migration files in dist-electron/migrations`
+  `Found ${files.length} migration files in dist-electron/migrations`
 );
-files.forEach((file) => console.log(`  ✓ ${file}`));
+files.forEach((file) => console.log(`  ${file}`));
 
 // Create package.json with type: commonjs for proper module resolution
 const packageJsonPath = path.join(migrationsDir, "package.json");
 const packageJsonContent = JSON.stringify({ type: "commonjs" }, null, 2);
 fs.writeFileSync(packageJsonPath, packageJsonContent + "\n", "utf8");
-console.log(`  ✓ package.json (type: commonjs)`);
+console.log(`  package.json (type: commonjs)`);
 
-console.log(`\n✓ Successfully verified ${files.length} migration files`);
+console.log(`\nSuccessfully verified ${files.length} migration files`);

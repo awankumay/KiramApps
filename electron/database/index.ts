@@ -97,25 +97,25 @@ export function getMigrationsPath(): string {
   // Try unpacked path first (production with asar)
   if (fs.existsSync(prodUnpackedMigrationsPath)) {
     console.log(
-      `[Migration] ✓ Using unpacked migrations: ${prodUnpackedMigrationsPath}`
+      `[Migration] Using unpacked migrations: ${prodUnpackedMigrationsPath}`
     );
     return prodUnpackedMigrationsPath;
   }
 
   // Try production path (non-asar or dev mode)
   if (fs.existsSync(prodPath)) {
-    console.log(`[Migration] ✓ Using regular path: ${prodPath}`);
+    console.log(`[Migration] Using regular path: ${prodPath}`);
     return prodPath;
   }
 
   // Try development built path
   if (fs.existsSync(devPath)) {
-    console.log(`[Migration] ✓ Using dev-built path: ${devPath}`);
+    console.log(`[Migration] Using dev-built path: ${devPath}`);
     return devPath;
   }
 
   // Fallback to source path
-  console.log(`[Migration] ✓ Using dev-source path: ${devPath2}`);
+  console.log(`[Migration] Using dev-source path: ${devPath2}`);
   return devPath2;
 }
 

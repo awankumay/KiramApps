@@ -4143,6 +4143,18 @@ class iN {
       };
     });
   }
+  /**
+   * Get active customer count
+   */
+  getActiveCount() {
+    return this.db.prepare("SELECT COUNT(*) as count FROM customers WHERE is_active = 1").get().count;
+  }
+  /**
+   * Get inactive customer count
+   */
+  getInactiveCount() {
+    return this.db.prepare("SELECT COUNT(*) as count FROM customers WHERE is_active = 0").get().count;
+  }
 }
 class oN {
   db;
@@ -32313,8 +32325,8 @@ Zj("better-sqlite3");
 function Yj() {
   const e = Jr.dirname(iA(import.meta.url)), t = e.replace("app.asar", "app.asar.unpacked"), r = Jr.join(t, "migrations"), n = Jr.join(e, "migrations"), s = Jr.join(process.cwd(), "dist-electron", "migrations"), a = Jr.join(process.cwd(), "electron", "migrations");
   return console.log("[Migration] Checking paths:"), console.log(`  1. Unpacked (prod): ${r}`), console.log(`  2. Regular (prod/dev): ${n}`), console.log(`  3. Dev built: ${s}`), console.log(`  4. Dev source: ${a}`), lt.existsSync(r) ? (console.log(
-    `[Migration] ✓ Using unpacked migrations: ${r}`
-  ), r) : lt.existsSync(n) ? (console.log(`[Migration] ✓ Using regular path: ${n}`), n) : lt.existsSync(s) ? (console.log(`[Migration] ✓ Using dev-built path: ${s}`), s) : (console.log(`[Migration] ✓ Using dev-source path: ${a}`), a);
+    `[Migration] Using unpacked migrations: ${r}`
+  ), r) : lt.existsSync(n) ? (console.log(`[Migration] Using regular path: ${n}`), n) : lt.existsSync(s) ? (console.log(`[Migration] Using dev-built path: ${s}`), s) : (console.log(`[Migration] Using dev-source path: ${a}`), a);
 }
 async function Xj(e) {
   const t = Yj();
@@ -32493,7 +32505,11 @@ class Tr {
   async pull(t, r) {
     try {
       const n = new URLSearchParams();
-      n.append("entity_type", t), r?.since && n.append("since", r.since), r?.page && n.append("page", r.page.toString()), r?.perPage && n.append("per_page", r.perPage.toString());
+      n.append("entity_type", t), r?.since && n.append("since", r.since), r?.page && n.append("page", r.page.toString()), r?.perPage && n.append("per_page", r.perPage.toString()), console.log(`[SyncService] Pulling ${t} with params:`, {
+        since: r?.since || "NULL",
+        page: r?.page || 1,
+        perPage: r?.perPage || 15
+      });
       const s = await this.fetchWithTimeout(
         `${this.baseUrl}/sync/pull?${n.toString()}`,
         {
@@ -32502,13 +32518,24 @@ class Tr {
         }
       );
       if (!s.ok)
-        return await s.json().catch(() => ({})), {
+        return await s.json().catch(() => ({})), console.error(
+          `[SyncService] Pull failed for ${t}: HTTP ${s.status}`
+        ), {
           success: !1,
           entityType: t,
           data: []
         };
       const a = await s.json();
-      return {
+      return console.log(`[SyncService] Pull response for ${t}:`, {
+        success: !0,
+        dataCount: a.data?.length || 0,
+        pagination: a.pagination ? {
+          currentPage: a.pagination.current_page,
+          lastPage: a.pagination.last_page,
+          perPage: a.pagination.per_page,
+          total: a.pagination.total
+        } : "NO PAGINATION"
+      }), {
         success: !0,
         entityType: t,
         data: a.data || [],
@@ -32519,8 +32546,8 @@ class Tr {
           total: a.pagination.total
         } : void 0
       };
-    } catch {
-      return {
+    } catch (n) {
+      return console.error(`[SyncService] Pull error for ${t}:`, n), {
         success: !1,
         entityType: t,
         data: []
@@ -32852,18 +32879,35 @@ class tq {
     console.log("[SyncManager] Syncing customers...");
     try {
       if (t !== "push") {
-        const r = await this.getLastSyncTime("customer", "pull"), n = await this.syncService.pull("customer", {
-          since: r || void 0
-        });
-        if (n.success && n.data.length > 0) {
-          for (const s of n.data)
-            await this.applyCustomerChange(
-              s
-            );
-          console.log(
-            `[SyncManager] Pulled ${n.data.length} customer changes`
-          );
+        const r = await this.getLastSyncTime("customer", "pull");
+        console.log(
+          `[SyncManager] Last sync time for customers (pull): ${r || "NULL (first sync)"}`
+        );
+        let n = 0, s = 1, a = !0;
+        for (; a; ) {
+          const i = await this.syncService.pull("customer", {
+            since: r || void 0,
+            page: s,
+            perPage: 100
+            // Increase perPage to reduce number of requests
+          });
+          if (console.log(
+            `[SyncManager] Pull result page ${s} - Success: ${i.success}, Data count: ${i.data.length}`
+          ), i.pagination && console.log(
+            `[SyncManager] Pagination info - Current: ${i.pagination.currentPage}, Last: ${i.pagination.lastPage}, PerPage: ${i.pagination.perPage}, Total: ${i.pagination.total}`
+          ), i.success && i.data.length > 0) {
+            for (const o of i.data)
+              await this.applyCustomerChange(
+                o
+              );
+            n += i.data.length, console.log(
+              `[SyncManager] Pulled ${i.data.length} customer changes from page ${s}`
+            ), i.pagination && s < i.pagination.lastPage ? s++ : a = !1;
+          } else i.success && i.data.length === 0 ? (console.log(
+            `[SyncManager] No customer changes on page ${s}`
+          ), a = !1) : (console.log("[SyncManager] Pull failed or returned no data"), a = !1);
         }
+        console.log(`[SyncManager] Total customers pulled: ${n}`);
       }
       return t !== "pull" && await this.processQueue(), { success: !0, message: "Customers synced successfully" };
     } catch (r) {
@@ -40934,6 +40978,24 @@ function YB() {
       return {
         success: !1,
         error: e instanceof Error ? e.message : "Failed to get active customers"
+      };
+    }
+  }), ce.handle("customers:getActiveCount", async () => {
+    try {
+      return { success: !0, data: oe.getCustomerManager().getActiveCount() };
+    } catch (e) {
+      return {
+        success: !1,
+        error: e instanceof Error ? e.message : "Failed to get active customers count"
+      };
+    }
+  }), ce.handle("customers:getInactiveCount", async () => {
+    try {
+      return { success: !0, data: oe.getCustomerManager().getInactiveCount() };
+    } catch (e) {
+      return {
+        success: !1,
+        error: e instanceof Error ? e.message : "Failed to get inactive customers count"
       };
     }
   }), ce.handle(

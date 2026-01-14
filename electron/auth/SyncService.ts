@@ -306,6 +306,12 @@ export class SyncService {
       if (options?.perPage)
         params.append("per_page", options.perPage.toString());
 
+      console.log(`[SyncService] Pulling ${entityType} with params:`, {
+        since: options?.since || "NULL",
+        page: options?.page || 1,
+        perPage: options?.perPage || 15,
+      });
+
       const response = await this.fetchWithTimeout(
         `${this.baseUrl}/sync/pull?${params.toString()}`,
         {
@@ -317,6 +323,9 @@ export class SyncService {
       if (!response.ok) {
         // Consume response body to prevent memory leaks
         await response.json().catch(() => ({}));
+        console.error(
+          `[SyncService] Pull failed for ${entityType}: HTTP ${response.status}`
+        );
         return {
           success: false,
           entityType,
@@ -325,6 +334,19 @@ export class SyncService {
       }
 
       const result = await response.json();
+      console.log(`[SyncService] Pull response for ${entityType}:`, {
+        success: true,
+        dataCount: result.data?.length || 0,
+        pagination: result.pagination
+          ? {
+              currentPage: result.pagination.current_page,
+              lastPage: result.pagination.last_page,
+              perPage: result.pagination.per_page,
+              total: result.pagination.total,
+            }
+          : "NO PAGINATION",
+      });
+
       return {
         success: true,
         entityType,
@@ -339,6 +361,7 @@ export class SyncService {
           : undefined,
       };
     } catch (error) {
+      console.error(`[SyncService] Pull error for ${entityType}:`, error);
       return {
         success: false,
         entityType,

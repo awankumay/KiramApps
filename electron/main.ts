@@ -903,6 +903,40 @@ function setupAuthHandlers() {
     }
   });
 
+  // Get active customers count
+  ipcMain.handle("customers:getActiveCount", async () => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const count = customerManager.getActiveCount();
+      return { success: true, data: count };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get active customers count",
+      };
+    }
+  });
+
+  // Get inactive customers count
+  ipcMain.handle("customers:getInactiveCount", async () => {
+    try {
+      const customerManager = authManager.getCustomerManager();
+      const count = customerManager.getInactiveCount();
+      return { success: true, data: count };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get inactive customers count",
+      };
+    }
+  });
+
   // ============================================
   // Vehicle Management CRUD Handlers
   // ============================================

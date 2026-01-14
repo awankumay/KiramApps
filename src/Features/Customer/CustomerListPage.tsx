@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Users,
   Search,
@@ -92,8 +92,16 @@ const initialFormData: CustomerFormData = {
 export function CustomerListPage() {
   // State
   const [customers, setCustomers] = useState<CustomerData[]>([]);
+  const [totalCustomers, setTotalCustomers] = useState(0);
+  const [activeCustomers, setActiveCustomers] = useState(0);
+  const [inactiveCustomers, setInactiveCustomers] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
+    undefined
+  );
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(
     undefined
   );
   const [isLoading, setIsLoading] = useState(true);
@@ -112,48 +120,119 @@ export function CustomerListPage() {
   >({});
 
   // Fetch customers on mount
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await window.api.customers.getAll({
-        name: searchQuery || undefined,
-        category: categoryFilter,
-      });
-
-      if (res.success && res.data) {
-        setCustomers(res.data.customers);
-      } else {
-        toast.error("Gagal memuat data customer", {
-          description: res.error,
+  const fetchData = useCallback(
+    async (page?: number) => {
+      setIsLoading(true);
+      try {
+        const res = await window.api.customers.getAll({
+          name: searchQuery || undefined,
+          category: categoryFilter,
+          is_active:
+            statusFilter === "active"
+              ? true
+              : statusFilter === "inactive"
+              ? false
+              : undefined,
+          page: page || currentPage,
         });
+
+        console.log("[CustomerListPage] Fetch result:", {
+          success: res.success,
+          customersCount: res.data?.customers?.length || 0,
+          total: res.data?.total,
+          page: res.data?.page,
+          limit: res.data?.limit,
+        });
+
+        if (res.success && res.data) {
+          setCustomers(res.data.customers);
+          setTotalCustomers(res.data.total || 0);
+          setCurrentPage(res.data.page || 1);
+          setTotalPages(
+            Math.ceil((res.data.total || 0) / (res.data.limit || 20))
+          );
+        } else {
+          toast.error("Gagal memuat data customer", {
+            description: res.error,
+          });
+        }
+      } catch (error) {
+        toast.error("Gagal memuat data", {
+          description: "Terjadi kesalahan saat memuat data",
+        });
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      toast.error("Gagal memuat data", {
-        description: "Terjadi kesalahan saat memuat data",
+    },
+    [searchQuery, categoryFilter, statusFilter, currentPage]
+  );
+
+  // Fetch stats separately (all customers, not just current page)
+  const fetchStats = useCallback(async () => {
+    try {
+      const [totalRes, activeRes, inactiveRes] = await Promise.all([
+        window.api.customers.getAll({
+          name: undefined,
+          category: undefined,
+          page: 1,
+          limit: 1, // Just get total count
+        }),
+        window.api.customers.getActiveCount(),
+        window.api.customers.getInactiveCount(),
+      ]);
+
+      if (totalRes.success && totalRes.data) {
+        setTotalCustomers(totalRes.data.total || 0);
+      }
+      if (activeRes.success) {
+        setActiveCustomers(activeRes.data || 0);
+      }
+      if (inactiveRes.success) {
+        setInactiveCustomers(inactiveRes.data || 0);
+      }
+
+      console.log("[CustomerListPage] Stats fetched:", {
+        total: totalRes.data?.total,
+        active: activeRes.data,
+        inactive: inactiveRes.data,
       });
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error("[CustomerListPage] Failed to fetch stats:", error);
     }
-  }, [searchQuery, categoryFilter]);
+  }, []);
 
+  // Initial data load on mount
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(1);
+    fetchStats();
+  }, [fetchStats]);
 
-  // Filter customers based on search and category
-  const filteredCustomers =
-    customers?.filter(
-      (customer) =>
-        customer &&
-        customer.name &&
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        (!categoryFilter || customer.category === categoryFilter)
-    ) || [];
+  // Track previous filters to avoid infinite loop
+  const prevFiltersRef = useRef({ searchQuery, categoryFilter, statusFilter });
 
-  // Stats
-  const totalCustomers = customers.length;
-  const activeCustomers = customers.filter((c) => c.is_active).length;
-  const inactiveCustomers = customers.filter((c) => !c.is_active).length;
+  // Fetch data when filters change (reset to page 1)
+  useEffect(() => {
+    const prevFilters = prevFiltersRef.current;
+    const currentFilters = { searchQuery, categoryFilter, statusFilter };
+
+    // Only fetch if filters actually changed
+    if (
+      prevFilters.searchQuery !== currentFilters.searchQuery ||
+      prevFilters.categoryFilter !== currentFilters.categoryFilter ||
+      prevFilters.statusFilter !== currentFilters.statusFilter
+    ) {
+      setCurrentPage(1);
+      fetchData(1);
+      prevFiltersRef.current = currentFilters;
+    }
+  }, [searchQuery, categoryFilter, statusFilter]);
+
+  // Filtering is done server-side via fetchData
+  // customers array already contains filtered results
+  const filteredCustomers = customers;
+
+  // Stats are now fetched from database via fetchStats
+  // Active and inactive counts come from database queries
 
   // Form validation
   const validateForm = (): boolean => {
@@ -202,6 +281,7 @@ export function CustomerListPage() {
         setCustomers((prev) => [...prev, res.data!]);
         setIsCreateDialogOpen(false);
         resetForm();
+        fetchStats(); // Refresh stats after creation
         toast.success("Customer berhasil ditambahkan", {
           description: `${res.data.name} telah ditambahkan`,
         });
@@ -243,6 +323,7 @@ export function CustomerListPage() {
         );
         setIsEditDialogOpen(false);
         resetForm();
+        fetchStats(); // Refresh stats after update
         toast.success("Customer berhasil diperbarui", {
           description: `Data ${res.data.name} telah diperbarui`,
         });
@@ -274,6 +355,7 @@ export function CustomerListPage() {
         );
         setIsDeleteDialogOpen(false);
         setSelectedCustomer(null);
+        fetchStats(); // Refresh stats after deletion
         toast.success("Customer berhasil dihapus", {
           description: `${selectedCustomer.name} telah dihapus`,
         });
@@ -302,6 +384,7 @@ export function CustomerListPage() {
         setCustomers((prev) =>
           prev.map((c) => (c.id === customer.id ? res.data! : c))
         );
+        fetchStats(); // Refresh stats after status toggle
         const statusText = res.data.is_active ? "aktif" : "nonaktif";
         toast.success("Status customer diperbarui", {
           description: `${customer.name} sekarang ${statusText}`,
@@ -469,7 +552,11 @@ export function CustomerListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={fetchData} variant="secondary" disabled={isLoading}>
+          <Button
+            onClick={() => fetchData()}
+            variant="secondary"
+            disabled={isLoading}
+          >
             <RefreshCw
               className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
             />
@@ -559,6 +646,19 @@ export function CustomerListPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Semua Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="active">Aktif</SelectItem>
+                <SelectItem value="inactive">Nonaktif</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Table */}
@@ -586,7 +686,7 @@ export function CustomerListPage() {
                         colSpan={6}
                         className="text-center py-8 text-muted-foreground"
                       >
-                        {searchQuery || categoryFilter
+                        {searchQuery || categoryFilter || statusFilter
                           ? "Tidak ada customer yang cocok dengan pencarian"
                           : "Belum ada customer"}
                       </TableCell>
@@ -666,6 +766,34 @@ export function CustomerListPage() {
                   )}
                 </TableBody>
               </Table>
+
+              {/* Pagination Controls */}
+              {totalCustomers > 0 && (
+                <div className="flex items-center justify-between px-2 py-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Halaman {currentPage} dari {totalPages} | Menampilkan{" "}
+                    {customers.length} dari {totalCustomers} customer
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchData(currentPage - 1)}
+                      disabled={currentPage <= 1 || isLoading}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchData(currentPage + 1)}
+                      disabled={currentPage >= totalPages || isLoading}
+                    >
+                      Selanjutnya
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
