@@ -1,1 +1,189 @@
-"use strict";const t=require("electron");t.contextBridge.exposeInMainWorld("ipcRenderer",{on(...e){const[r,n]=e;return t.ipcRenderer.on(r,(i,...s)=>n(i,...s))},off(...e){const[r,...n]=e;return t.ipcRenderer.off(r,...n)},send(...e){const[r,...n]=e;return t.ipcRenderer.send(r,...n)},invoke(...e){const[r,...n]=e;return t.ipcRenderer.invoke(r,...n)}});t.contextBridge.exposeInMainWorld("api",{auth:{login:(e,r)=>t.ipcRenderer.invoke("auth:login",e,r),logout:()=>t.ipcRenderer.invoke("auth:logout"),getCurrentUser:()=>t.ipcRenderer.invoke("auth:getCurrentUser"),checkAuthStatus:()=>t.ipcRenderer.invoke("auth:checkAuthStatus"),refreshToken:()=>t.ipcRenderer.invoke("auth:refreshToken"),isOnline:()=>t.ipcRenderer.invoke("auth:isOnline"),getPermissions:()=>t.ipcRenderer.invoke("auth:getPermissions"),getRoles:()=>t.ipcRenderer.invoke("auth:getRoles"),checkPermission:e=>t.ipcRenderer.invoke("auth:checkPermission",e)},rbac:{getAllRoles:()=>t.ipcRenderer.invoke("rbac:getAllRoles"),getAllPermissions:()=>t.ipcRenderer.invoke("rbac:getAllPermissions")},users:{getAll:()=>t.ipcRenderer.invoke("users:getAll"),getById:e=>t.ipcRenderer.invoke("users:getById",e),create:e=>t.ipcRenderer.invoke("users:create",e),update:(e,r)=>t.ipcRenderer.invoke("users:update",e,r),delete:e=>t.ipcRenderer.invoke("users:delete",e),toggleStatus:e=>t.ipcRenderer.invoke("users:toggleStatus",e)},items:{getAll:()=>t.ipcRenderer.invoke("items:getAll"),getById:e=>t.ipcRenderer.invoke("items:getById",e),create:e=>t.ipcRenderer.invoke("items:create",e),update:(e,r,n)=>t.ipcRenderer.invoke("items:update",e,r,n),delete:e=>t.ipcRenderer.invoke("items:delete",e),toggleStatus:e=>t.ipcRenderer.invoke("items:toggleStatus",e),search:e=>t.ipcRenderer.invoke("items:search",e),getActive:()=>t.ipcRenderer.invoke("items:getActive"),getPriceHistory:e=>t.ipcRenderer.invoke("items:getPriceHistory",e)},customers:{getAll:e=>t.ipcRenderer.invoke("customers:getAll",e||{}),getById:e=>t.ipcRenderer.invoke("customers:getById",e),create:e=>t.ipcRenderer.invoke("customers:create",e),update:(e,r)=>t.ipcRenderer.invoke("customers:update",e,r),delete:e=>t.ipcRenderer.invoke("customers:delete",e),search:e=>t.ipcRenderer.invoke("customers:search",e),getActive:()=>t.ipcRenderer.invoke("customers:getActive"),getActiveCount:()=>t.ipcRenderer.invoke("customers:getActiveCount"),getInactiveCount:()=>t.ipcRenderer.invoke("customers:getInactiveCount")},vehicles:{getAll:e=>t.ipcRenderer.invoke("vehicles:getAll",e||{}),getById:e=>t.ipcRenderer.invoke("vehicles:getById",e),create:e=>t.ipcRenderer.invoke("vehicles:create",e),update:(e,r)=>t.ipcRenderer.invoke("vehicles:update",e,r),delete:e=>t.ipcRenderer.invoke("vehicles:delete",e),search:e=>t.ipcRenderer.invoke("vehicles:search",e),getByCustomerId:e=>t.ipcRenderer.invoke("vehicles:getByCustomerId",e),getActive:()=>t.ipcRenderer.invoke("vehicles:getActive"),plateNumberExists:(e,r)=>t.ipcRenderer.invoke("vehicles:plateNumberExists",e,r)},transactions:{getAll:e=>t.ipcRenderer.invoke("transactions:getAll",e||{}),getById:e=>t.ipcRenderer.invoke("transactions:getById",e),create:(e,r)=>t.ipcRenderer.invoke("transactions:create",e,r),update:(e,r)=>t.ipcRenderer.invoke("transactions:update",e,r),delete:e=>t.ipcRenderer.invoke("transactions:delete",e),search:e=>t.ipcRenderer.invoke("transactions:search",e),updateStatus:(e,r,n,i)=>t.ipcRenderer.invoke("transactions:updateStatus",e,r,n,i),getStatusHistory:e=>t.ipcRenderer.invoke("transactions:getStatusHistory",e),addPayment:(e,r,n)=>t.ipcRenderer.invoke("transactions:addPayment",e,r,n),getPayments:e=>t.ipcRenderer.invoke("transactions:getPayments",e),getDailyStats:e=>t.ipcRenderer.invoke("transactions:getDailyStats",e)},transactionTypes:{getAll:()=>t.ipcRenderer.invoke("transactionTypes:getAll"),getById:e=>t.ipcRenderer.invoke("transactionTypes:getById",e),create:e=>t.ipcRenderer.invoke("transactionTypes:create",e),update:(e,r)=>t.ipcRenderer.invoke("transactionTypes:update",e,r),delete:e=>t.ipcRenderer.invoke("transactionTypes:delete",e),getActive:()=>t.ipcRenderer.invoke("transactionTypes:getActive")},paymentMethods:{getAll:e=>t.ipcRenderer.invoke("paymentMethods:getAll",e||{}),getById:e=>t.ipcRenderer.invoke("paymentMethods:getById",e),create:e=>t.ipcRenderer.invoke("paymentMethods:create",e),update:(e,r)=>t.ipcRenderer.invoke("paymentMethods:update",e,r),delete:e=>t.ipcRenderer.invoke("paymentMethods:delete",e),getActive:()=>t.ipcRenderer.invoke("paymentMethods:getActive")},loaders:{getAll:e=>t.ipcRenderer.invoke("loaders:getAll",e||{}),getById:e=>t.ipcRenderer.invoke("loaders:getById",e),create:e=>t.ipcRenderer.invoke("loaders:create",e),update:(e,r)=>t.ipcRenderer.invoke("loaders:update",e,r),delete:e=>t.ipcRenderer.invoke("loaders:delete",e),getActive:()=>t.ipcRenderer.invoke("loaders:getActive")},payments:{getPending:e=>t.ipcRenderer.invoke("payments:getPending",e),getById:e=>t.ipcRenderer.invoke("payments:getById",e),verify:(e,r,n)=>t.ipcRenderer.invoke("payments:verify",e,r,n),reject:(e,r,n,i)=>t.ipcRenderer.invoke("payments:reject",e,r,n,i),getVerificationStats:e=>t.ipcRenderer.invoke("payments:getVerificationStats",e),uploadProof:(e,r,n)=>t.ipcRenderer.invoke("payments:uploadProof",e,r,n),getProofPath:e=>t.ipcRenderer.invoke("payments:getProofPath",e),deleteProof:e=>t.ipcRenderer.invoke("payments:deleteProof",e),readProofFile:e=>t.ipcRenderer.invoke("payments:readProofFile",e),openProofWithViewer:e=>t.ipcRenderer.invoke("payments:openProofWithViewer",e),saveProofAs:(e,r)=>t.ipcRenderer.invoke("payments:saveProofAs",e,r)},settings:{getAll:()=>t.ipcRenderer.invoke("settings:getAll"),get:e=>t.ipcRenderer.invoke("settings:get",e),getValue:(e,r)=>t.ipcRenderer.invoke("settings:getValue",e,r),set:(e,r,n)=>t.ipcRenderer.invoke("settings:set",e,r,n),setMultiple:e=>t.ipcRenderer.invoke("settings:setMultiple",e),getByCategory:e=>t.ipcRenderer.invoke("settings:getByCategory",e),testConnection:e=>t.ipcRenderer.invoke("settings:testConnection",e)},sync:{getStats:()=>t.ipcRenderer.invoke("sync:getStats"),getLogs:e=>t.ipcRenderer.invoke("sync:getLogs",e),syncAll:()=>t.ipcRenderer.invoke("sync:syncAll"),syncEntity:(e,r)=>t.ipcRenderer.invoke("sync:syncEntity",e,r),retry:e=>t.ipcRenderer.invoke("sync:retry",e),retryFailed:()=>t.ipcRenderer.invoke("sync:retryFailed"),startScheduler:()=>t.ipcRenderer.invoke("sync:startScheduler"),stopScheduler:()=>t.ipcRenderer.invoke("sync:stopScheduler"),isOnline:()=>t.ipcRenderer.invoke("sync:isOnline"),getNetworkStatus:()=>t.ipcRenderer.invoke("sync:getNetworkStatus"),pushInitialData:e=>t.ipcRenderer.invoke("sync:pushInitialData",e),pushAllInitialData:()=>t.ipcRenderer.invoke("sync:pushAllInitialData")},printer:{getPrinters:()=>t.ipcRenderer.invoke("printer:getPrinters"),getPrinterConfig:()=>t.ipcRenderer.invoke("printer:getPrinterConfig"),savePrinterConfig:e=>t.ipcRenderer.invoke("printer:savePrinterConfig",e),printTest:e=>t.ipcRenderer.invoke("printer:printTest",e),printReceipt:(e,r)=>t.ipcRenderer.invoke("printer:printReceipt",e,r),printSuratKirim:(e,r)=>t.ipcRenderer.invoke("printer:printSuratKirim",e,r),previewTemplate:(e,r)=>t.ipcRenderer.invoke("printer:previewTemplate",e,r),getTemplates:()=>t.ipcRenderer.invoke("printer:getTemplates")}});
+"use strict";
+const electron = require("electron");
+electron.contextBridge.exposeInMainWorld("ipcRenderer", {
+  on(...args) {
+    const [channel, listener] = args;
+    return electron.ipcRenderer.on(
+      channel,
+      (event, ...args2) => listener(event, ...args2)
+    );
+  },
+  off(...args) {
+    const [channel, ...omit] = args;
+    return electron.ipcRenderer.off(channel, ...omit);
+  },
+  send(...args) {
+    const [channel, ...omit] = args;
+    return electron.ipcRenderer.send(channel, ...omit);
+  },
+  invoke(...args) {
+    const [channel, ...omit] = args;
+    return electron.ipcRenderer.invoke(channel, ...omit);
+  }
+  // You can expose other APTs you need here.
+  // ...
+});
+electron.contextBridge.exposeInMainWorld("api", {
+  auth: {
+    login: (username, password) => electron.ipcRenderer.invoke("auth:login", username, password),
+    logout: () => electron.ipcRenderer.invoke("auth:logout"),
+    getCurrentUser: () => electron.ipcRenderer.invoke("auth:getCurrentUser"),
+    checkAuthStatus: () => electron.ipcRenderer.invoke("auth:checkAuthStatus"),
+    refreshToken: () => electron.ipcRenderer.invoke("auth:refreshToken"),
+    isOnline: () => electron.ipcRenderer.invoke("auth:isOnline"),
+    // RBAC methods
+    getPermissions: () => electron.ipcRenderer.invoke("auth:getPermissions"),
+    getRoles: () => electron.ipcRenderer.invoke("auth:getRoles"),
+    checkPermission: (permissionCode) => electron.ipcRenderer.invoke("auth:checkPermission", permissionCode)
+  },
+  rbac: {
+    getAllRoles: () => electron.ipcRenderer.invoke("rbac:getAllRoles"),
+    getAllPermissions: () => electron.ipcRenderer.invoke("rbac:getAllPermissions")
+  },
+  users: {
+    getAll: () => electron.ipcRenderer.invoke("users:getAll"),
+    getById: (userId) => electron.ipcRenderer.invoke("users:getById", userId),
+    create: (userData) => electron.ipcRenderer.invoke("users:create", userData),
+    update: (userId, userData) => electron.ipcRenderer.invoke("users:update", userId, userData),
+    delete: (userId) => electron.ipcRenderer.invoke("users:delete", userId),
+    toggleStatus: (userId) => electron.ipcRenderer.invoke("users:toggleStatus", userId)
+  },
+  items: {
+    getAll: () => electron.ipcRenderer.invoke("items:getAll"),
+    getById: (itemId) => electron.ipcRenderer.invoke("items:getById", itemId),
+    create: (itemData) => electron.ipcRenderer.invoke("items:create", itemData),
+    update: (itemId, itemData, userId) => electron.ipcRenderer.invoke("items:update", itemId, itemData, userId),
+    delete: (itemId) => electron.ipcRenderer.invoke("items:delete", itemId),
+    toggleStatus: (itemId) => electron.ipcRenderer.invoke("items:toggleStatus", itemId),
+    search: (query) => electron.ipcRenderer.invoke("items:search", query),
+    getActive: () => electron.ipcRenderer.invoke("items:getActive"),
+    getPriceHistory: (itemId) => electron.ipcRenderer.invoke("items:getPriceHistory", itemId)
+  },
+  customers: {
+    getAll: (filters) => electron.ipcRenderer.invoke("customers:getAll", filters || {}),
+    getById: (customerId) => electron.ipcRenderer.invoke("customers:getById", customerId),
+    create: (customerData) => electron.ipcRenderer.invoke("customers:create", customerData),
+    update: (customerId, customerData) => electron.ipcRenderer.invoke("customers:update", customerId, customerData),
+    delete: (customerId) => electron.ipcRenderer.invoke("customers:delete", customerId),
+    search: (query) => electron.ipcRenderer.invoke("customers:search", query),
+    getActive: () => electron.ipcRenderer.invoke("customers:getActive"),
+    getActiveCount: () => electron.ipcRenderer.invoke("customers:getActiveCount"),
+    getInactiveCount: () => electron.ipcRenderer.invoke("customers:getInactiveCount")
+  },
+  vehicles: {
+    getAll: (filters) => electron.ipcRenderer.invoke("vehicles:getAll", filters || {}),
+    getById: (vehicleId) => electron.ipcRenderer.invoke("vehicles:getById", vehicleId),
+    create: (vehicleData) => electron.ipcRenderer.invoke("vehicles:create", vehicleData),
+    update: (vehicleId, vehicleData) => electron.ipcRenderer.invoke("vehicles:update", vehicleId, vehicleData),
+    delete: (vehicleId) => electron.ipcRenderer.invoke("vehicles:delete", vehicleId),
+    search: (query) => electron.ipcRenderer.invoke("vehicles:search", query),
+    getByCustomerId: (customerId) => electron.ipcRenderer.invoke("vehicles:getByCustomerId", customerId),
+    getActive: () => electron.ipcRenderer.invoke("vehicles:getActive"),
+    plateNumberExists: (plateNumber, excludeId) => electron.ipcRenderer.invoke("vehicles:plateNumberExists", plateNumber, excludeId)
+  },
+  transactions: {
+    getAll: (filters) => electron.ipcRenderer.invoke("transactions:getAll", filters || {}),
+    getById: (transactionId) => electron.ipcRenderer.invoke("transactions:getById", transactionId),
+    create: (transactionData, userId) => electron.ipcRenderer.invoke("transactions:create", transactionData, userId),
+    update: (transactionId, transactionData) => electron.ipcRenderer.invoke("transactions:update", transactionId, transactionData),
+    delete: (transactionId) => electron.ipcRenderer.invoke("transactions:delete", transactionId),
+    search: (query) => electron.ipcRenderer.invoke("transactions:search", query),
+    updateStatus: (transactionId, newStatus, userId, note) => electron.ipcRenderer.invoke(
+      "transactions:updateStatus",
+      transactionId,
+      newStatus,
+      userId,
+      note
+    ),
+    getStatusHistory: (transactionId) => electron.ipcRenderer.invoke("transactions:getStatusHistory", transactionId),
+    addPayment: (transactionId, paymentData, verifiedBy) => electron.ipcRenderer.invoke(
+      "transactions:addPayment",
+      transactionId,
+      paymentData,
+      verifiedBy
+    ),
+    getPayments: (transactionId) => electron.ipcRenderer.invoke("transactions:getPayments", transactionId),
+    getDailyStats: (date) => electron.ipcRenderer.invoke("transactions:getDailyStats", date)
+  },
+  transactionTypes: {
+    getAll: () => electron.ipcRenderer.invoke("transactionTypes:getAll"),
+    getById: (id) => electron.ipcRenderer.invoke("transactionTypes:getById", id),
+    create: (data) => electron.ipcRenderer.invoke("transactionTypes:create", data),
+    update: (id, data) => electron.ipcRenderer.invoke("transactionTypes:update", id, data),
+    delete: (id) => electron.ipcRenderer.invoke("transactionTypes:delete", id),
+    getActive: () => electron.ipcRenderer.invoke("transactionTypes:getActive")
+  },
+  paymentMethods: {
+    getAll: (filters) => electron.ipcRenderer.invoke("paymentMethods:getAll", filters || {}),
+    getById: (id) => electron.ipcRenderer.invoke("paymentMethods:getById", id),
+    create: (data) => electron.ipcRenderer.invoke("paymentMethods:create", data),
+    update: (id, data) => electron.ipcRenderer.invoke("paymentMethods:update", id, data),
+    delete: (id) => electron.ipcRenderer.invoke("paymentMethods:delete", id),
+    getActive: () => electron.ipcRenderer.invoke("paymentMethods:getActive")
+  },
+  loaders: {
+    getAll: (filters) => electron.ipcRenderer.invoke("loaders:getAll", filters || {}),
+    getById: (id) => electron.ipcRenderer.invoke("loaders:getById", id),
+    create: (data) => electron.ipcRenderer.invoke("loaders:create", data),
+    update: (id, data) => electron.ipcRenderer.invoke("loaders:update", id, data),
+    delete: (id) => electron.ipcRenderer.invoke("loaders:delete", id),
+    getActive: () => electron.ipcRenderer.invoke("loaders:getActive")
+  },
+  payments: {
+    getPending: (filters) => electron.ipcRenderer.invoke("payments:getPending", filters),
+    getById: (paymentId) => electron.ipcRenderer.invoke("payments:getById", paymentId),
+    verify: (paymentId, notes, proofData) => electron.ipcRenderer.invoke("payments:verify", paymentId, notes, proofData),
+    reject: (paymentId, reason, notes, proofData) => electron.ipcRenderer.invoke(
+      "payments:reject",
+      paymentId,
+      reason,
+      notes,
+      proofData
+    ),
+    getVerificationStats: (dateRange) => electron.ipcRenderer.invoke("payments:getVerificationStats", dateRange),
+    uploadProof: (paymentId, imageData, fileName) => electron.ipcRenderer.invoke(
+      "payments:uploadProof",
+      paymentId,
+      imageData,
+      fileName
+    ),
+    getProofPath: (paymentId) => electron.ipcRenderer.invoke("payments:getProofPath", paymentId),
+    deleteProof: (paymentId) => electron.ipcRenderer.invoke("payments:deleteProof", paymentId),
+    readProofFile: (paymentIdOrPath) => electron.ipcRenderer.invoke("payments:readProofFile", paymentIdOrPath),
+    openProofWithViewer: (paymentId) => electron.ipcRenderer.invoke("payments:openProofWithViewer", paymentId),
+    saveProofAs: (paymentId, fileName) => electron.ipcRenderer.invoke("payments:saveProofAs", paymentId, fileName)
+  },
+  settings: {
+    getAll: () => electron.ipcRenderer.invoke("settings:getAll"),
+    get: (key) => electron.ipcRenderer.invoke("settings:get", key),
+    getValue: (key, defaultValue) => electron.ipcRenderer.invoke("settings:getValue", key, defaultValue),
+    set: (key, value, options) => electron.ipcRenderer.invoke("settings:set", key, value, options),
+    setMultiple: (settings) => electron.ipcRenderer.invoke("settings:setMultiple", settings),
+    getByCategory: (category) => electron.ipcRenderer.invoke("settings:getByCategory", category),
+    testConnection: (url) => electron.ipcRenderer.invoke("settings:testConnection", url)
+  },
+  sync: {
+    getStats: () => electron.ipcRenderer.invoke("sync:getStats"),
+    getLogs: (filters) => electron.ipcRenderer.invoke("sync:getLogs", filters),
+    syncAll: () => electron.ipcRenderer.invoke("sync:syncAll"),
+    syncEntity: (entityType, direction) => electron.ipcRenderer.invoke("sync:syncEntity", entityType, direction),
+    retry: (syncId) => electron.ipcRenderer.invoke("sync:retry", syncId),
+    retryFailed: () => electron.ipcRenderer.invoke("sync:retryFailed"),
+    startScheduler: () => electron.ipcRenderer.invoke("sync:startScheduler"),
+    stopScheduler: () => electron.ipcRenderer.invoke("sync:stopScheduler"),
+    isOnline: () => electron.ipcRenderer.invoke("sync:isOnline"),
+    getNetworkStatus: () => electron.ipcRenderer.invoke("sync:getNetworkStatus"),
+    pushInitialData: (entityType) => electron.ipcRenderer.invoke("sync:pushInitialData", entityType),
+    pushAllInitialData: () => electron.ipcRenderer.invoke("sync:pushAllInitialData")
+  },
+  printer: {
+    getPrinters: () => electron.ipcRenderer.invoke("printer:getPrinters"),
+    getPrinterConfig: () => electron.ipcRenderer.invoke("printer:getPrinterConfig"),
+    savePrinterConfig: (config) => electron.ipcRenderer.invoke("printer:savePrinterConfig", config),
+    printTest: (config) => electron.ipcRenderer.invoke("printer:printTest", config),
+    printReceipt: (data, config) => electron.ipcRenderer.invoke("printer:printReceipt", data, config),
+    printSuratKirim: (data, config) => electron.ipcRenderer.invoke("printer:printSuratKirim", data, config),
+    previewTemplate: (templateId, data) => electron.ipcRenderer.invoke("printer:previewTemplate", templateId, data),
+    getTemplates: () => electron.ipcRenderer.invoke("printer:getTemplates")
+  }
+});

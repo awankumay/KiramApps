@@ -122,7 +122,7 @@ export class SyncService {
   async push<T>(
     entityType: SyncEntityType,
     action: SyncAction,
-    data: T
+    data: T,
   ): Promise<SyncPushResponse> {
     const syncId = SyncService.generateSyncId();
     // Payload structure for reference - actual body is formatted below
@@ -136,7 +136,7 @@ export class SyncService {
     void _payload; // Suppress unused warning
 
     console.log(
-      `[SyncService] Pushing ${action} for ${entityType} | SyncID: ${syncId}`
+      `[SyncService] Pushing ${action} for ${entityType} | SyncID: ${syncId}`,
     );
     console.log(
       `[SyncService] Payload:`,
@@ -150,8 +150,8 @@ export class SyncService {
           },
         },
         null,
-        2
-      )
+        2,
+      ),
     );
 
     try {
@@ -168,14 +168,14 @@ export class SyncService {
               ...data,
             },
           }),
-        }
+        },
       );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error(
           `[SyncService] ✗ Push failed for ${entityType} (SyncID: ${syncId}):`,
-          errorData.message || `HTTP ${response.status}`
+          errorData.message || `HTTP ${response.status}`,
         );
         return {
           success: false,
@@ -187,9 +187,9 @@ export class SyncService {
 
       const result = await response.json();
       console.log(
-        `[SyncService] ✓ Push successful for ${entityType} (SyncID: ${syncId}) | EntityID: ${
+        `[SyncService] Push successful for ${entityType} (SyncID: ${syncId}) | EntityID: ${
           result.entity_id || "N/A"
-        }`
+        }`,
       );
       return {
         success: true,
@@ -201,7 +201,7 @@ export class SyncService {
     } catch (error) {
       console.error(
         `[SyncService] ✗ Push error for ${entityType} (SyncID: ${syncId}):`,
-        error instanceof Error ? error.message : error
+        error instanceof Error ? error.message : error,
       );
       return {
         success: false,
@@ -220,7 +220,7 @@ export class SyncService {
       entityType: SyncEntityType;
       action: SyncAction;
       data: T;
-    }>
+    }>,
   ): Promise<SyncBatchResponse> {
     const payloads = items.map((item) => ({
       entity_type: item.entityType,
@@ -238,7 +238,7 @@ export class SyncService {
           method: "POST",
           headers: this.getHeaders(),
           body: JSON.stringify({ items: payloads }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -296,7 +296,7 @@ export class SyncService {
       since?: string;
       page?: number;
       perPage?: number;
-    }
+    },
   ): Promise<SyncPullResponse<T>> {
     try {
       const params = new URLSearchParams();
@@ -317,14 +317,14 @@ export class SyncService {
         {
           method: "GET",
           headers: this.getHeaders(),
-        }
+        },
       );
 
       if (!response.ok) {
         // Consume response body to prevent memory leaks
         await response.json().catch(() => ({}));
         console.error(
-          `[SyncService] Pull failed for ${entityType}: HTTP ${response.status}`
+          `[SyncService] Pull failed for ${entityType}: HTTP ${response.status}`,
         );
         return {
           success: false,
@@ -380,7 +380,7 @@ export class SyncService {
         {
           method: "GET",
           headers: this.getHeaders(),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -431,7 +431,7 @@ export class SyncService {
         {
           method: "GET",
           headers: this.getHeaders(),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -507,7 +507,7 @@ export class SyncService {
         {
           method: "GET",
           headers: this.getHeaders(),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -539,7 +539,7 @@ export class SyncService {
               errorMessage: log.error_message,
               syncedAt: log.synced_at,
               createdAt: log.created_at,
-            })
+            }),
           ) || [],
         pagination: result.pagination
           ? {
@@ -583,7 +583,7 @@ export class SyncService {
    */
   private async fetchWithTimeout(
     url: string,
-    options: RequestInit
+    options: RequestInit,
   ): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
