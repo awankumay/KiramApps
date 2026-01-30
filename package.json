@@ -55,7 +55,7 @@
     "tailwindcss": "^4.1.18",
     "umzug": "^3.8.2",
     "vaul": "^1.1.2",
-    "zod": "^4.3.4"
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
